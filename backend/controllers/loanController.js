@@ -11,12 +11,12 @@ const withInterest = (loan) => {
 
   if (ti > 0 && dur > 0) {
     // ── New model (fixed total interest) ──────────────────────────────────
-    obj.interestAmount      = parseFloat((ti  / dur).toFixed(2));          // daily interest
-    obj.dailyPrincipalAmount = parseFloat((pa  / dur).toFixed(2));          // daily principal
-    obj.dailyAmount         = parseFloat(((pa + ti) / dur).toFixed(2));     // daily total
-    obj.totalLoanAmount     = parseFloat((pa + ti).toFixed(2));             // total payable
+    obj.interestAmount       = parseFloat((ti  / dur).toFixed(2));
+    obj.dailyPrincipalAmount = parseFloat((pa  / dur).toFixed(2));
+    obj.dailyAmount          = parseFloat(((pa + ti) / dur).toFixed(2));
+    obj.totalLoanAmount      = parseFloat((pa + ti).toFixed(2));
     const totalPaid = (obj.totalPrincipalPaid || 0) + (obj.totalInterestPaid || 0);
-    obj.remainingAmount     = parseFloat(Math.max(0, pa + ti - totalPaid).toFixed(2));
+    obj.remainingAmount      = parseFloat(Math.max(0, pa + ti - totalPaid).toFixed(2));
   } else {
     // ── Legacy model (rate %) ─────────────────────────────────────────────
     const rate = obj.interestRate || 0;
@@ -31,17 +31,41 @@ const withInterest = (loan) => {
     obj.totalLoanAmount      = pa;
     obj.remainingAmount      = obj.remainingPrincipal || 0;
   }
+
+  // ── Overdue detection ─────────────────────────────────────────────────
+  if (obj.status === 'Active' && obj.loanType === 'Daily' && obj.completionDate) {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const cd    = new Date(obj.completionDate); cd.setHours(0, 0, 0, 0);
+    if (cd < today) {
+      obj.isOverdue   = true;
+      obj.daysOverdue = Math.floor((today - cd) / 86400000);
+    } else {
+      obj.isOverdue   = false;
+      obj.daysOverdue = 0;
+    }
+  } else {
+    obj.isOverdue   = false;
+    obj.daysOverdue = 0;
+  }
+
   return obj;
 };
 
 // @GET /api/loans
 const getLoans = async (req, res) => {
   try {
-    const { borrowerId, status, loanType, sortBy, search, page = 1, limit = 20 } = req.query;
+    const { borrowerId, status, loanType, sortBy, search, overdue, page = 1, limit = 20 } = req.query;
     const query = {};
 
-    if (status) query.status = status;
-    if (loanType) query.loanType = loanType;
+    if (overdue === 'true') {
+      // Overdue = Active Daily loans whose completionDate is in the past
+      query.status         = 'Active';
+      query.loanType       = 'Daily';
+      query.completionDate = { $lt: new Date() };
+    } else {
+      if (status) query.status = status;
+      if (loanType) query.loanType = loanType;
+    }
 
     // Search by borrower name
     if (search) {

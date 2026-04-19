@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Edit2, Trash2, Search, AlertTriangle, MapPin, X } from 'lucide-react'
+import { Plus, Edit2, Trash2, Search, AlertTriangle, MapPin, X, Clock } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../services/api'
 import { useAuth } from '../context/AuthContext'
@@ -29,6 +29,7 @@ export default function Loans() {
   const [borrowers, setBorrowers]     = useState([])
   const [loading, setLoading]         = useState(true)
   const [loanTypeFilter, setLoanTypeFilter] = useState('')
+  const [overdueFilter, setOverdueFilter]   = useState(false)
   const [sortBy, setSortBy]           = useState('')
   const [search, setSearch]           = useState('')
   const [showModal, setShowModal]     = useState(false)
@@ -41,13 +42,21 @@ export default function Loans() {
     setLoading(true)
     try {
       const res = await api.get('/loans', {
-        params: { status: '', loanType: loanTypeFilter, sortBy, search, page, limit: 15 }
+        params: {
+          status: '',
+          loanType: overdueFilter ? '' : loanTypeFilter,
+          sortBy,
+          search,
+          page,
+          limit: 15,
+          overdue: overdueFilter ? 'true' : ''
+        }
       })
       setLoans(res.data.data)
       setPagination(res.data.pagination)
     } catch { toast.error('Failed to load loans') }
     finally { setLoading(false) }
-  }, [loanTypeFilter, sortBy, search])
+  }, [loanTypeFilter, overdueFilter, sortBy, search])
 
   useEffect(() => { fetchLoans() }, [fetchLoans])
 
@@ -221,9 +230,9 @@ export default function Loans() {
             {[['', 'All'], ['Daily', 'Daily'], ['Monthly', 'Monthly']].map(([val, label]) => (
               <button
                 key={val}
-                onClick={() => setLoanTypeFilter(val)}
+                onClick={() => { setLoanTypeFilter(val); setOverdueFilter(false) }}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  loanTypeFilter === val
+                  !overdueFilter && loanTypeFilter === val
                     ? 'bg-white text-primary-700 shadow-sm'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
@@ -231,6 +240,17 @@ export default function Loans() {
                 {label}
               </button>
             ))}
+            <button
+              onClick={() => { setOverdueFilter(v => !v); setLoanTypeFilter('') }}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                overdueFilter
+                  ? 'bg-red-500 text-white shadow-sm'
+                  : 'text-red-500 hover:text-red-700 hover:bg-red-50'
+              }`}
+            >
+              <Clock className="w-3.5 h-3.5" />
+              Overdue
+            </button>
           </div>
           <select
             className="input w-auto text-sm"
@@ -242,7 +262,10 @@ export default function Loans() {
             <option value="completionDate_desc">Completion Date ↓</option>
             <option value="isDefault">Defaults First</option>
           </select>
-          <span className="text-sm text-gray-500 ml-auto">{pagination.total} loans</span>
+          <span className="text-sm text-gray-500 ml-auto">
+            {overdueFilter && <span className="text-red-500 font-medium mr-1">Overdue:</span>}
+            {pagination.total} loans
+          </span>
         </div>
       </div>
 
@@ -267,7 +290,10 @@ export default function Loans() {
               ) : loans.length === 0 ? (
                 <tr><td colSpan={10} className="text-center py-12 text-gray-400">No loans found</td></tr>
               ) : loans.map(l => (
-                <tr key={l._id} className={`hover:bg-gray-50/50 ${l.isDefault ? 'border-l-2 border-l-orange-400' : ''}`}>
+                <tr key={l._id} className={`hover:bg-gray-50/50 ${
+                  l.isOverdue ? 'border-l-2 border-l-red-400 bg-red-50/20' :
+                  l.isDefault ? 'border-l-2 border-l-orange-400' : ''
+                }`}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-1.5">
                       <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">{l.loanId}</span>
@@ -329,14 +355,33 @@ export default function Loans() {
                       <div className="flex items-center gap-1"><MapPin className="w-3 h-3" />{l.collectionPoint}</div>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
-                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
-                    {l.loanType === 'Daily' && l.completionDate
-                      ? new Date(l.completionDate).toLocaleDateString('en-IN')
-                      : <span className="text-gray-300">—</span>
-                    }
+                  <td className="px-4 py-3 whitespace-nowrap">
+                    {l.loanType === 'Daily' && l.completionDate ? (
+                      <div>
+                        <span className={l.isOverdue ? 'text-red-600 font-medium' : 'text-gray-600'}>
+                          {new Date(l.completionDate).toLocaleDateString('en-IN')}
+                        </span>
+                        {l.isOverdue && (
+                          <div className="text-[11px] text-red-500 mt-0.5 flex items-center gap-0.5">
+                            <Clock className="w-3 h-3" />
+                            {l.daysOverdue}d past due
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={l.status === 'Active' ? 'badge-green' : 'badge-gray'}>{l.status}</span>
+                    <div className="flex flex-col gap-1">
+                      <span className={l.status === 'Active' ? 'badge-green' : 'badge-gray'}>{l.status}</span>
+                      {l.isOverdue && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full w-fit">
+                          <Clock className="w-2.5 h-2.5" />
+                          OVERDUE
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3">
                     {isAdmin && (
