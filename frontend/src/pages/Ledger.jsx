@@ -76,33 +76,69 @@ export default function Ledger() {
       {/* Grand Total */}
       {balances && (
         <div className="card p-4 flex items-center justify-between bg-primary-900 text-white rounded-xl">
-          <p className="font-semibold">Grand Total Balance (All Accounts)</p>
-          <p className="text-2xl font-bold">{fmt(balances.total)}</p>
+          <p className="font-semibold text-sm sm:text-base">Grand Total Balance (All Accounts)</p>
+          <p className="text-xl sm:text-2xl font-bold">{fmt(balances.total)}</p>
         </div>
       )}
 
       {/* Filters */}
-      <div className="card p-4 flex flex-wrap gap-3 items-end">
-        <div>
-          <label className="label text-xs">Account</label>
-          <select className="input" value={filters.account} onChange={e => setFilters(p => ({...p,account:e.target.value}))}>
-            <option value="">All</option>
-            <option>Cash</option><option>Piyush</option><option>Sanjay</option><option>Online</option>
-          </select>
+      <div className="card p-4">
+        <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end sm:gap-3">
+          <div>
+            <label className="label text-xs">Account</label>
+            <select className="input w-full" value={filters.account} onChange={e => setFilters(p => ({...p,account:e.target.value}))}>
+              <option value="">All</option>
+              <option>Cash</option><option>Piyush</option><option>Sanjay</option><option>Online</option>
+            </select>
+          </div>
+          <div>
+            <label className="label text-xs">From</label>
+            <input type="date" className="input w-full" value={filters.startDate} onChange={e => setFilters(p => ({...p,startDate:e.target.value}))} />
+          </div>
+          <div>
+            <label className="label text-xs">To</label>
+            <input type="date" className="input w-full" value={filters.endDate} onChange={e => setFilters(p => ({...p,endDate:e.target.value}))} />
+          </div>
+          <div className="flex items-end">
+            <button onClick={() => fetchEntries()} className="btn-primary w-full">Apply</button>
+          </div>
         </div>
-        <div>
-          <label className="label text-xs">From</label>
-          <input type="date" className="input" value={filters.startDate} onChange={e => setFilters(p => ({...p,startDate:e.target.value}))} />
-        </div>
-        <div>
-          <label className="label text-xs">To</label>
-          <input type="date" className="input" value={filters.endDate} onChange={e => setFilters(p => ({...p,endDate:e.target.value}))} />
-        </div>
-        <button onClick={() => fetchEntries()} className="btn-primary">Apply</button>
       </div>
 
-      {/* Ledger Table */}
-      <div className="card overflow-hidden">
+      {/* Mobile Card List */}
+      <div className="md:hidden space-y-2">
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary-600 border-t-transparent" />
+          </div>
+        ) : entries.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">No ledger entries</div>
+        ) : entries.map(e => (
+          <div key={e._id} className="card p-3">
+            <div className="flex items-center justify-between mb-1">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">{new Date(e.date).toLocaleDateString('en-IN')}</span>
+                <span className={`badge ${e.account === 'Cash' ? 'badge-blue' : e.account === 'Piyush' ? 'badge-green' : 'badge-yellow'}`}>{e.account}</span>
+              </div>
+              <span className={`font-semibold text-sm ${e.type === 'credit' ? 'text-green-700' : 'text-red-700'}`}>
+                {e.type === 'credit' ? '+' : '-'}{fmt(e.amount)}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              {e.type === 'credit'
+                ? <TrendingUp className="w-3 h-3 text-green-500 flex-shrink-0" />
+                : <TrendingDown className="w-3 h-3 text-red-500 flex-shrink-0" />
+              }
+              <span className={`capitalize ${e.type === 'credit' ? 'text-green-600' : 'text-red-600'}`}>{e.type}</span>
+              <span className="text-gray-300 mx-1">·</span>
+              <span className="truncate text-gray-500">{e.description}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop Table */}
+      <div className="hidden md:block card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
@@ -149,6 +185,18 @@ export default function Ledger() {
           </div>
         )}
       </div>
+
+      {/* Mobile Pagination */}
+      {pagination.pages > 1 && (
+        <div className="md:hidden flex justify-between text-sm text-gray-500">
+          <span>{pagination.total} entries</span>
+          <div className="flex gap-1">
+            {Array.from({ length: pagination.pages }, (_, i) => i + 1).map(p => (
+              <button key={p} onClick={() => fetchEntries(p)} className={`px-3 py-1 rounded ${p === pagination.page ? 'bg-primary-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>{p}</button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

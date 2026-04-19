@@ -269,29 +269,33 @@ export default function DailyEntries() {
       {activeTab === 'collection' && (
         <div className="space-y-4">
           {/* Controls strip */}
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex items-center gap-2">
-              <label className="text-sm font-medium text-gray-700">Date:</label>
-              <input type="date" className="input w-auto" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} />
+          <div className="flex flex-col sm:flex-row sm:flex-wrap items-start sm:items-center gap-3">
+            {/* Date + mode toggle row */}
+            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full sm:w-auto">
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-gray-700">Date:</label>
+                <input type="date" className="input w-auto" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} />
+              </div>
+
+              {/* Individual / Bulk toggle */}
+              <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+                {[['individual', 'Individual'], ['bulk', 'Bulk']].map(([val, label]) => (
+                  <button
+                    key={val}
+                    onClick={() => setEntryMode(val)}
+                    className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
+                      entryMode === val ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500'
+                    }`}
+                  >
+                    {val === 'bulk' && <Layers className="w-3.5 h-3.5" />}
+                    {label}
+                  </button>
+                ))}
+              </div>
             </div>
 
-            {/* Individual / Bulk toggle */}
-            <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
-              {[['individual', 'Individual'], ['bulk', 'Bulk']].map(([val, label]) => (
-                <button
-                  key={val}
-                  onClick={() => setEntryMode(val)}
-                  className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                    entryMode === val ? 'bg-white text-primary-700 shadow-sm' : 'text-gray-500'
-                  }`}
-                >
-                  {val === 'bulk' && <Layers className="w-3.5 h-3.5" />}
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            <div className="flex gap-2 ml-auto items-center">
+            {/* Counts + View Report */}
+            <div className="flex flex-wrap gap-2 items-center sm:ml-auto">
               <span className="badge bg-yellow-100 text-yellow-800">{pendingCount} Pending</span>
               <span className="badge-green">{paidCount} Paid</span>
               <button
@@ -325,50 +329,50 @@ export default function DailyEntries() {
                     return (
                       <div key={loanId} className={isPaid ? 'bg-green-50/40' : 'bg-white'}>
                         {/* Row Header */}
-                        <div className="px-4 py-3 flex items-center gap-3 flex-wrap">
-                          <div className="flex items-center gap-2 min-w-[160px]">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${isPaid ? 'bg-green-500 text-white' : 'bg-primary-100 text-primary-700'}`}>
+                        <div className="px-4 py-3">
+                          {/* Top part: avatar + name + action buttons */}
+                          <div className="flex items-start gap-3">
+                            <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold mt-0.5 ${isPaid ? 'bg-green-500 text-white' : 'bg-primary-100 text-primary-700'}`}>
                               {isPaid ? <CheckCircle2 className="w-4 h-4" /> : row.borrower.name.charAt(0).toUpperCase()}
                             </div>
-                            <div>
+                            <div className="flex-1 min-w-0">
                               <p className="font-semibold text-sm text-gray-900">{row.borrower.name}</p>
                               {row.loan.collectionPoint && <p className="text-xs text-gray-400">{row.loan.collectionPoint}</p>}
+                              {/* Loan info: shown below name on mobile */}
+                              <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-gray-500">
+                                <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">{row.loan.loanId}</span>
+                                <span className={row.loan.loanType === 'Daily' ? 'badge-blue' : 'badge-yellow'}>{row.loan.loanType}</span>
+                                <span>Rem: <strong className="text-blue-700">{fmt(row.remainingAmount)}</strong></span>
+                                {row.dailyPrincipalAmount > 0 ? (
+                                  <span>Daily: <strong className="text-gray-700">{fmt(row.dailyAmount)}</strong>
+                                    <span className="text-gray-400 ml-1 hidden sm:inline">(Int {fmt(row.dailyInterestAmount)} + Prin {fmt(row.dailyPrincipalAmount)})</span>
+                                  </span>
+                                ) : (
+                                  <span>Int/day: <strong className="text-orange-600">{fmt(row.dailyInterestAmount)}</strong></span>
+                                )}
+                              </div>
                             </div>
-                          </div>
-
-                          <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
-                            <span className="font-mono bg-gray-100 px-2 py-1 rounded">{row.loan.loanId}</span>
-                            <span className={row.loan.loanType === 'Daily' ? 'badge-blue' : 'badge-yellow'}>{row.loan.loanType}</span>
-                            <span>Remaining: <strong className="text-blue-700">{fmt(row.remainingAmount)}</strong></span>
-                            {row.dailyPrincipalAmount > 0 ? (
-                              <span>Daily: <strong className="text-gray-700">{fmt(row.dailyAmount)}</strong>
-                                <span className="text-gray-400 ml-1">(Int {fmt(row.dailyInterestAmount)} + Prin {fmt(row.dailyPrincipalAmount)})</span>
-                              </span>
-                            ) : (
-                              <span>Int/day: <strong className="text-orange-600">{fmt(row.dailyInterestAmount)}</strong></span>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-2 ml-auto">
-                            {!isPaid && (
-                              <button
-                                onClick={() => setExpandedRows(p => ({ ...p, [loanId]: !isExpanded }))}
-                                className={`btn text-xs py-1.5 ${isExpanded ? 'btn-secondary' : 'btn-primary'}`}
-                              >
-                                {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                                {isExpanded ? 'Close' : 'Enter Payment'}
+                            <div className="flex items-center gap-1 flex-shrink-0">
+                              {!isPaid && (
+                                <button
+                                  onClick={() => setExpandedRows(p => ({ ...p, [loanId]: !isExpanded }))}
+                                  className={`btn text-xs py-1.5 px-2 sm:px-3 ${isExpanded ? 'btn-secondary' : 'btn-primary'}`}
+                                >
+                                  {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                  <span className="hidden sm:inline ml-1">{isExpanded ? 'Close' : 'Enter Payment'}</span>
+                                </button>
+                              )}
+                              <button onClick={() => openHistory(row.borrower)} className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50" title="History">
+                                <History className="w-4 h-4" />
                               </button>
-                            )}
-                            <button onClick={() => openHistory(row.borrower)} className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50" title="History">
-                              <History className="w-4 h-4" />
-                            </button>
+                            </div>
                           </div>
                         </div>
 
                         {/* Paid: summary */}
                         {isPaid && row.todayEntry && (
-                          <div className="px-4 pb-3 ml-10">
-                            <div className="flex flex-wrap items-center gap-3 text-xs">
+                          <div className="px-4 pb-3 ml-11">
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
                               <span className="font-bold text-green-700 text-sm">{fmt(row.todayEntry.amountPaid)}</span>
                               <span className="text-orange-600">Interest: {fmt(row.todayEntry.interestPortion)}</span>
                               <span className="text-blue-600">Principal: {fmt(row.todayEntry.principalPortion)}</span>
@@ -381,7 +385,7 @@ export default function DailyEntries() {
                                 : <span className={`${MODE_COLORS[row.todayEntry.mode]} badge`}>{row.todayEntry.mode}</span>
                               }
                               {isAdmin && (
-                                <button onClick={() => deleteEntry(row.todayEntry._id)} className="text-red-400 hover:text-red-600 ml-2">
+                                <button onClick={() => deleteEntry(row.todayEntry._id)} className="text-red-400 hover:text-red-600 ml-1">
                                   <Trash2 className="w-3.5 h-3.5" />
                                 </button>
                               )}
@@ -391,19 +395,21 @@ export default function DailyEntries() {
 
                         {/* Expanded: entry form */}
                         {!isPaid && isExpanded && (
-                          <div className="px-4 pb-4 ml-10 space-y-3">
+                          <div className="px-4 pb-4 ml-11 space-y-3">
                             <div className="bg-gray-50 rounded-xl p-4 space-y-3">
                               {payments.map((payment, i) => (
-                                <div key={i} className="flex items-center gap-2 flex-wrap">
-                                  <select className="input w-28 text-sm" value={payment.mode} onChange={e => updatePayment(loanId, i, 'mode', e.target.value)}>
+                                <div key={i} className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
+                                  <select className="input text-sm col-span-1" value={payment.mode} onChange={e => updatePayment(loanId, i, 'mode', e.target.value)}>
                                     {PAYMENT_MODES.map(m => <option key={m} value={m}>{m}</option>)}
                                   </select>
                                   {payment.mode === 'Online' && (
-                                    <input type="text" className="input w-32 text-sm" placeholder="Account name" value={payment.accountName} onChange={e => updatePayment(loanId, i, 'accountName', e.target.value)} />
+                                    <input type="text" className="input text-sm col-span-1" placeholder="Account name" value={payment.accountName} onChange={e => updatePayment(loanId, i, 'accountName', e.target.value)} />
                                   )}
-                                  <input type="number" className="input w-28 text-sm" placeholder="Amount" min="0" step="0.01" value={payment.amount} onChange={e => updatePayment(loanId, i, 'amount', e.target.value)} />
+                                  <input type="number" className="input text-sm col-span-1" placeholder="Amount" min="0" step="0.01" value={payment.amount} onChange={e => updatePayment(loanId, i, 'amount', e.target.value)} />
                                   {payments.length > 1 && (
-                                    <button type="button" onClick={() => removePaymentLine(loanId, i)} className="text-gray-400 hover:text-red-500"><X className="w-4 h-4" /></button>
+                                    <button type="button" onClick={() => removePaymentLine(loanId, i)} className="text-gray-400 hover:text-red-500 col-span-1 flex justify-center">
+                                      <X className="w-4 h-4" />
+                                    </button>
                                   )}
                                 </div>
                               ))}
@@ -494,31 +500,25 @@ export default function DailyEntries() {
                           return (
                             <div key={loanId} className="px-4 py-3 space-y-2">
                               {/* Borrower header row */}
-                              <div className="flex flex-wrap items-start gap-3">
+                              <div className="flex flex-col sm:flex-row sm:flex-wrap items-start gap-2 sm:gap-3">
                                 {/* Name + loan info */}
-                                <div className="min-w-[140px]">
+                                <div className="min-w-0 flex-1">
                                   <p className="font-semibold text-sm text-gray-900">{row.borrower.name}</p>
-                                  <div className="flex items-center gap-1.5 mt-0.5">
+                                  <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
                                     <span className="font-mono text-[11px] bg-gray-100 px-1.5 py-0.5 rounded">{row.loan.loanId}</span>
                                     {row.loan.collectionPoint && <span className="text-[11px] text-gray-400">{row.loan.collectionPoint}</span>}
+                                    <span className="text-xs text-gray-500">Rem: <strong className="text-blue-700">{fmt(row.remainingAmount)}</strong></span>
+                                    {row.dailyPrincipalAmount > 0 ? (
+                                      <span className="text-xs text-gray-500">Daily: <strong className="text-gray-700">{fmt(row.dailyAmount)}</strong></span>
+                                    ) : (
+                                      <span className="text-xs text-gray-500">Int/day: <strong className="text-orange-600">{fmt(row.dailyInterestAmount)}</strong></span>
+                                    )}
                                   </div>
-                                </div>
-
-                                {/* Amounts info */}
-                                <div className="flex items-center gap-3 text-xs text-gray-500 flex-wrap">
-                                  <span>Remaining: <strong className="text-blue-700">{fmt(row.remainingAmount)}</strong></span>
-                                  {row.dailyPrincipalAmount > 0 ? (
-                                    <span>Daily: <strong className="text-gray-700">{fmt(row.dailyAmount)}</strong>
-                                      <span className="text-gray-400 ml-1">(Int {fmt(row.dailyInterestAmount)} + Prin {fmt(row.dailyPrincipalAmount)})</span>
-                                    </span>
-                                  ) : (
-                                    <span>Int/day: <strong className="text-orange-600">{fmt(row.dailyInterestAmount)}</strong></span>
-                                  )}
                                 </div>
 
                                 {/* Split preview */}
                                 {bulkTotal > 0 && (
-                                  <div className="ml-auto flex items-center gap-2 text-xs">
+                                  <div className="flex items-center gap-2 text-xs">
                                     <span className="bg-white border rounded-lg px-2 py-1 font-semibold text-gray-800">{fmt(bulkTotal)}</span>
                                     <span className="text-orange-600">Int {fmt(split.interest)}</span>
                                     <span className="text-blue-600">Prin {fmt(split.principal)}</span>
@@ -529,9 +529,9 @@ export default function DailyEntries() {
                               {/* Payment lines */}
                               <div className="space-y-2 pl-2 border-l-2 border-gray-100">
                                 {pmts.map((payment, i) => (
-                                  <div key={i} className="flex items-center gap-2 flex-wrap">
+                                  <div key={i} className="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2">
                                     <select
-                                      className="input text-sm py-1.5 w-28"
+                                      className="input text-sm py-1.5 col-span-1"
                                       value={payment.mode}
                                       onChange={e => updateBulk(loanId, i, 'mode', e.target.value)}
                                     >
@@ -540,7 +540,7 @@ export default function DailyEntries() {
                                     {payment.mode === 'Online' && (
                                       <input
                                         type="text"
-                                        className="input text-sm py-1.5 w-28"
+                                        className="input text-sm py-1.5 col-span-1"
                                         placeholder="Account name"
                                         value={payment.accountName}
                                         onChange={e => updateBulk(loanId, i, 'accountName', e.target.value)}
@@ -548,23 +548,25 @@ export default function DailyEntries() {
                                     )}
                                     <input
                                       type="number"
-                                      className="input text-sm py-1.5 w-28"
+                                      className="input text-sm py-1.5 col-span-1"
                                       placeholder="Amount"
                                       min="0"
                                       step="0.01"
                                       value={payment.amount}
                                       onChange={e => updateBulk(loanId, i, 'amount', e.target.value)}
                                     />
-                                    {pmts.length > 1 && (
-                                      <button type="button" onClick={() => removeBulkLine(loanId, i)} className="text-gray-400 hover:text-red-500">
-                                        <X className="w-4 h-4" />
-                                      </button>
-                                    )}
-                                    {i === pmts.length - 1 && (
-                                      <button type="button" onClick={() => addBulkLine(loanId)} className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1 ml-1">
-                                        <Plus className="w-3.5 h-3.5" /> Split
-                                      </button>
-                                    )}
+                                    <div className="flex items-center gap-1 col-span-1">
+                                      {pmts.length > 1 && (
+                                        <button type="button" onClick={() => removeBulkLine(loanId, i)} className="text-gray-400 hover:text-red-500">
+                                          <X className="w-4 h-4" />
+                                        </button>
+                                      )}
+                                      {i === pmts.length - 1 && (
+                                        <button type="button" onClick={() => addBulkLine(loanId)} className="text-xs text-primary-600 hover:text-primary-700 font-medium flex items-center gap-1 ml-1">
+                                          <Plus className="w-3.5 h-3.5" /> Split
+                                        </button>
+                                      )}
+                                    </div>
                                   </div>
                                 ))}
                               </div>
@@ -583,9 +585,9 @@ export default function DailyEntries() {
                       </div>
                       <div className="divide-y divide-gray-50">
                         {borrowerTable.filter(r => r.todayEntry).map(row => (
-                          <div key={row.loan._id} className="px-4 py-2.5 flex items-center gap-3 bg-green-50/30 text-sm">
+                          <div key={row.loan._id} className="px-4 py-2.5 flex flex-wrap items-center gap-2 sm:gap-3 bg-green-50/30 text-sm">
                             <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
-                            <span className="font-medium text-gray-900 min-w-[120px]">{row.borrower.name}</span>
+                            <span className="font-medium text-gray-900">{row.borrower.name}</span>
                             <span className="font-mono text-xs bg-gray-100 px-2 py-0.5 rounded">{row.loan.loanId}</span>
                             <span className="font-semibold text-green-700">{fmt(row.todayEntry.amountPaid)}</span>
                             <span className="text-orange-600 text-xs">Int: {fmt(row.todayEntry.interestPortion)}</span>
@@ -620,35 +622,92 @@ export default function DailyEntries() {
       {/* ══ HISTORY TAB ═══════════════════════════════════════════════════════ */}
       {activeTab === 'history' && (
         <div className="space-y-5">
-          <div className="card p-4 flex flex-wrap gap-3 items-end">
-            <div>
-              <label className="label text-xs">From</label>
-              <input type="date" className="input" value={historyFilters.startDate} onChange={e => setHistoryFilters(p => ({...p, startDate: e.target.value}))} />
-            </div>
-            <div>
-              <label className="label text-xs">To</label>
-              <input type="date" className="input" value={historyFilters.endDate} onChange={e => setHistoryFilters(p => ({...p, endDate: e.target.value}))} />
-            </div>
-            <div>
-              <label className="label text-xs">Mode</label>
-              <select className="input" value={historyFilters.mode} onChange={e => setHistoryFilters(p => ({...p, mode: e.target.value}))}>
-                <option value="">All</option>
-                {PAYMENT_MODES.map(m => <option key={m}>{m}</option>)}
-              </select>
-            </div>
-            {isAdmin && collectorsList.length > 0 && (
+          {/* Filters */}
+          <div className="card p-4">
+            <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-end sm:gap-3">
               <div>
-                <label className="label text-xs">Collector</label>
-                <select className="input" value={collectedByFilter} onChange={e => setCollectedByFilter(e.target.value)}>
-                  <option value="">All Collectors</option>
-                  {collectorsList.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+                <label className="label text-xs">From</label>
+                <input type="date" className="input w-full" value={historyFilters.startDate} onChange={e => setHistoryFilters(p => ({...p, startDate: e.target.value}))} />
+              </div>
+              <div>
+                <label className="label text-xs">To</label>
+                <input type="date" className="input w-full" value={historyFilters.endDate} onChange={e => setHistoryFilters(p => ({...p, endDate: e.target.value}))} />
+              </div>
+              <div>
+                <label className="label text-xs">Mode</label>
+                <select className="input w-full" value={historyFilters.mode} onChange={e => setHistoryFilters(p => ({...p, mode: e.target.value}))}>
+                  <option value="">All</option>
+                  {PAYMENT_MODES.map(m => <option key={m}>{m}</option>)}
                 </select>
               </div>
-            )}
-            <button onClick={() => fetchHistory()} className="btn-primary">Apply</button>
+              {isAdmin && collectorsList.length > 0 && (
+                <div>
+                  <label className="label text-xs">Collector</label>
+                  <select className="input w-full" value={collectedByFilter} onChange={e => setCollectedByFilter(e.target.value)}>
+                    <option value="">All Collectors</option>
+                    {collectorsList.map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="flex items-end col-span-2 sm:col-span-1">
+                <button onClick={() => fetchHistory()} className="btn-primary w-full sm:w-auto">Apply</button>
+              </div>
+            </div>
           </div>
 
-          <div className="card overflow-hidden">
+          {/* Mobile History Cards */}
+          <div className="md:hidden space-y-3">
+            {historyLoading ? (
+              <div className="flex justify-center py-12">
+                <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary-600 border-t-transparent" />
+              </div>
+            ) : historyEntries.length === 0 ? (
+              <div className="text-center py-12 text-gray-400">No entries found</div>
+            ) : historyEntries.map(e => (
+              <div key={e._id} className="card p-3">
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="min-w-0">
+                    <button onClick={() => openHistory(e.borrower)} className="font-medium text-primary-600 hover:underline text-left text-sm">
+                      {e.borrower?.name}
+                    </button>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
+                      <span className="text-xs text-gray-400">{new Date(e.date).toLocaleDateString('en-IN')}</span>
+                      <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">{e.loan?.loanId}</span>
+                      {e.collectedBy?.name && <span className="text-xs text-gray-400">{e.collectedBy.name}</span>}
+                    </div>
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="font-semibold text-green-700 text-sm">{fmt(e.amountPaid)}</p>
+                    <div className="flex flex-wrap gap-1 justify-end mt-1">
+                      {e.payments?.length > 0
+                        ? e.payments.map((p, i) => (
+                            <span key={i} className={`${MODE_COLORS[p.mode]} badge text-[10px]`}>
+                              {p.mode}: {fmt(p.amount)}
+                            </span>
+                          ))
+                        : <span className={`${MODE_COLORS[e.mode]} badge text-[10px]`}>{e.mode}</span>
+                      }
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center justify-between text-xs text-gray-500">
+                  <span>Int: <span className="text-orange-600 font-medium">{fmt(e.interestPortion)}</span></span>
+                  <span>Prin: <span className="text-blue-600 font-medium">{fmt(e.principalPortion)}</span></span>
+                  {isAdmin && (
+                    <button
+                      onClick={() => api.delete(`/daily-entries/${e._id}`).then(() => { toast.success('Deleted'); fetchHistory() }).catch(err => toast.error(err.response?.data?.message || 'Failed'))}
+                      className="p-1 rounded text-gray-400 hover:text-red-600 hover:bg-red-50"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop History Table */}
+          <div className="hidden md:block card overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
@@ -714,6 +773,18 @@ export default function DailyEntries() {
               </div>
             )}
           </div>
+
+          {/* Mobile Pagination */}
+          {historyPagination.pages > 1 && (
+            <div className="md:hidden flex justify-between text-sm text-gray-500">
+              <span>{historyPagination.total} entries</span>
+              <div className="flex gap-1">
+                {Array.from({ length: historyPagination.pages }, (_, i) => i + 1).map(p => (
+                  <button key={p} onClick={() => fetchHistory(p)} className={`px-3 py-1 rounded ${p === historyPagination.page ? 'bg-primary-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>{p}</button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

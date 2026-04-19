@@ -209,7 +209,7 @@ export default function Loans() {
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input
-              className="input pl-9"
+              className="input pl-9 w-full"
               placeholder="Search by borrower name..."
               value={search}
               onChange={e => setSearch(e.target.value)}
@@ -218,15 +218,15 @@ export default function Loans() {
           {isAdmin && (
             <button
               onClick={() => { setEditLoan(null); setForm(EMPTY_FORM); setShowModal(true) }}
-              className="btn-primary whitespace-nowrap"
+              className="btn-primary w-full sm:w-auto whitespace-nowrap"
             >
               <Plus className="w-4 h-4" /> New Loan
             </button>
           )}
         </div>
 
-        <div className="flex flex-wrap gap-2 items-center">
-          <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+        <div className="flex flex-col sm:flex-row flex-wrap gap-2 items-start sm:items-center">
+          <div className="flex flex-wrap gap-1 bg-gray-100 rounded-lg p-1">
             {[['', 'All'], ['Daily', 'Daily'], ['Monthly', 'Monthly']].map(([val, label]) => (
               <button
                 key={val}
@@ -253,7 +253,7 @@ export default function Loans() {
             </button>
           </div>
           <select
-            className="input w-auto text-sm"
+            className="input w-full sm:w-auto text-sm"
             value={sortBy}
             onChange={e => setSortBy(e.target.value)}
           >
@@ -262,15 +262,121 @@ export default function Loans() {
             <option value="completionDate_desc">Completion Date ↓</option>
             <option value="isDefault">Defaults First</option>
           </select>
-          <span className="text-sm text-gray-500 ml-auto">
+          <span className="text-sm text-gray-500 sm:ml-auto">
             {overdueFilter && <span className="text-red-500 font-medium mr-1">Overdue:</span>}
             {pagination.total} loans
           </span>
         </div>
       </div>
 
-      {/* Table */}
-      <div className="card overflow-hidden">
+      {/* Mobile Card List */}
+      <div className="md:hidden space-y-3">
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary-600 border-t-transparent" />
+          </div>
+        ) : loans.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">No loans found</div>
+        ) : loans.map(l => (
+          <div key={l._id} className={`card p-4 ${
+            l.isOverdue ? 'border-l-4 border-l-red-400 bg-red-50/20' :
+            l.isDefault ? 'border-l-4 border-l-orange-400' : ''
+          }`}>
+            {/* Header: Loan ID + badges */}
+            <div className="flex items-center gap-2 mb-2 flex-wrap">
+              <span className="font-mono text-xs bg-gray-100 px-2 py-1 rounded">{l.loanId}</span>
+              {l.isDefault && (
+                <span className="badge bg-orange-100 text-orange-700 text-[10px]">
+                  <AlertTriangle className="w-2.5 h-2.5 mr-0.5 inline" />DEFAULT
+                </span>
+              )}
+              {l.isOverdue && (
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full">
+                  <Clock className="w-2.5 h-2.5" />OVERDUE
+                </span>
+              )}
+              <span className={`ml-auto ${l.status === 'Active' ? 'badge-green' : 'badge-gray'}`}>{l.status}</span>
+            </div>
+
+            {/* Borrower name */}
+            <p className="font-semibold text-gray-900 text-sm mb-2">{l.borrower?.name}</p>
+
+            {/* Daily payment */}
+            <div className="mb-2">
+              {l.totalInterest > 0 ? (
+                <>
+                  <span className="font-semibold text-gray-900 text-sm">{fmt(l.dailyAmount)}/day</span>
+                  <span className="text-[11px] text-gray-400 ml-1">
+                    Int {fmt(l.interestAmount)} + Prin {fmt(l.dailyPrincipalAmount)}
+                  </span>
+                </>
+              ) : (
+                <span className="text-orange-600 font-medium text-sm">{fmt(l.interestAmount)}/day
+                  {l.interestRate > 0 && <span className="text-gray-400 text-xs ml-1">({l.interestRate}%)</span>}
+                </span>
+              )}
+            </div>
+
+            {/* Remaining / Total */}
+            <div className="flex items-center justify-between text-sm mb-2">
+              <span className="text-blue-700 font-semibold">
+                {fmt(l.remainingAmount !== undefined ? l.remainingAmount : l.remainingPrincipal)} remaining
+              </span>
+              {l.totalInterest > 0 && (
+                <span className="text-xs text-gray-400">of {fmt(l.totalLoanAmount)}</span>
+              )}
+            </div>
+
+            {/* Progress bar */}
+            <div className="flex items-center gap-2 mb-2">
+              <div className="flex-1 bg-gray-200 rounded-full h-1.5">
+                <div
+                  className="bg-primary-600 h-1.5 rounded-full transition-all"
+                  style={{ width: `${progress(l)}%` }}
+                />
+              </div>
+              <span className="text-xs text-gray-500 w-8">{progress(l)}%</span>
+            </div>
+
+            {/* Collection point + Completion */}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mb-3">
+              {l.collectionPoint && (
+                <div className="flex items-center gap-1">
+                  <MapPin className="w-3 h-3" />{l.collectionPoint}
+                </div>
+              )}
+              {l.loanType === 'Daily' && l.completionDate ? (
+                <div>
+                  <span className={l.isOverdue ? 'text-red-600 font-medium' : ''}>
+                    {new Date(l.completionDate).toLocaleDateString('en-IN')}
+                  </span>
+                  {l.isOverdue && (
+                    <span className="text-red-500 ml-1">
+                      <Clock className="w-3 h-3 inline" /> {l.daysOverdue}d past due
+                    </span>
+                  )}
+                </div>
+              ) : null}
+              <span className={l.loanType === 'Daily' ? 'badge-blue' : 'badge-yellow'}>{l.loanType || 'Daily'}</span>
+            </div>
+
+            {/* Action buttons */}
+            {isAdmin && (
+              <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+                <button onClick={() => handleEdit(l)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm text-gray-600 hover:text-primary-600 hover:bg-primary-50 transition-colors border border-gray-200">
+                  <Edit2 className="w-4 h-4" /> Edit
+                </button>
+                <button onClick={() => handleDelete(l._id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm text-gray-600 hover:text-red-600 hover:bg-red-50 transition-colors border border-gray-200">
+                  <Trash2 className="w-4 h-4" /> Delete
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop Table */}
+      <div className="hidden md:block card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
@@ -418,6 +524,24 @@ export default function Loans() {
           </div>
         )}
       </div>
+
+      {/* Mobile Pagination */}
+      {pagination.pages > 1 && (
+        <div className="md:hidden flex items-center justify-between text-sm text-gray-500">
+          <span>{pagination.total} loans</span>
+          <div className="flex gap-1">
+            {Array.from({ length: pagination.pages }, (_, i) => i + 1).map(p => (
+              <button
+                key={p}
+                onClick={() => fetchLoans(p)}
+                className={`px-3 py-1 rounded ${p === pagination.page ? 'bg-primary-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}
+              >
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Create / Edit Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={editLoan ? 'Edit Loan' : 'Create New Loan'} size="lg">

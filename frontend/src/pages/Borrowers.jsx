@@ -104,24 +104,70 @@ export default function Borrowers() {
     <div className="space-y-5">
       {/* Top Bar */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center justify-between">
-        <div className="relative flex-1 max-w-sm">
+        <div className="relative w-full sm:flex-1 sm:max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
-            className="input pl-9"
+            className="input pl-9 w-full"
             placeholder="Search borrowers..."
             value={search}
             onChange={e => setSearch(e.target.value)}
           />
         </div>
         {isAdmin && (
-          <button onClick={openAdd} className="btn-primary">
+          <button onClick={openAdd} className="btn-primary w-full sm:w-auto">
             <Plus className="w-4 h-4" /> Add Borrower
           </button>
         )}
       </div>
 
-      {/* Table */}
-      <div className="card overflow-hidden">
+      {/* Mobile Card List */}
+      <div className="md:hidden space-y-3">
+        {loading ? (
+          <div className="flex justify-center py-12">
+            <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary-600 border-t-transparent" />
+          </div>
+        ) : borrowers.length === 0 ? (
+          <div className="text-center py-12 text-gray-400">No borrowers found</div>
+        ) : borrowers.map(b => (
+          <div key={b._id} className="card p-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-primary-700 font-semibold text-sm flex-shrink-0">
+                {b.name.charAt(0).toUpperCase()}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-semibold text-gray-900 text-sm">{b.name}</p>
+                <div className="flex items-center gap-1 text-xs text-gray-500 mt-0.5">
+                  <Phone className="w-3 h-3 flex-shrink-0" />
+                  <span>{b.phone}</span>
+                </div>
+                <div className="flex items-center gap-1 text-xs text-gray-500 mt-0.5">
+                  <MapPin className="w-3 h-3 flex-shrink-0" />
+                  <span className="truncate">{b.address}</span>
+                </div>
+                <div className="mt-2">
+                  <span className="badge-blue">{b.assignedCollector?.name || '—'}</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-gray-100">
+              <button onClick={() => handleView(b)} className="p-2 rounded-lg text-gray-400 hover:text-blue-600 hover:bg-blue-50 transition-colors">
+                <Eye className="w-4 h-4" />
+              </button>
+              {isAdmin && <>
+                <button onClick={() => handleEdit(b)} className="p-2 rounded-lg text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-colors">
+                  <Edit2 className="w-4 h-4" />
+                </button>
+                <button onClick={() => handleDelete(b._id)} className="p-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Desktop Table */}
+      <div className="hidden md:block card overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
@@ -183,6 +229,18 @@ export default function Borrowers() {
           </div>
         )}
       </div>
+
+      {/* Mobile Pagination */}
+      {pagination.pages > 1 && (
+        <div className="md:hidden flex items-center justify-between text-sm text-gray-500">
+          <span>Showing {borrowers.length} of {pagination.total}</span>
+          <div className="flex gap-1">
+            {Array.from({ length: pagination.pages }, (_, i) => i + 1).map(p => (
+              <button key={p} onClick={() => fetchBorrowers(p)} className={`px-3 py-1 rounded ${p === pagination.page ? 'bg-primary-600 text-white' : 'bg-gray-100 hover:bg-gray-200'}`}>{p}</button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Add/Edit Modal */}
       <Modal isOpen={showModal} onClose={() => setShowModal(false)} title={selectedBorrower ? 'Edit Borrower' : 'Add Borrower'}>

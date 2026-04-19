@@ -131,7 +131,27 @@ export default function Dashboard() {
         <div className="px-6 py-4 border-b border-gray-100">
           <h3 className="font-semibold text-gray-900">Recent Transactions</h3>
         </div>
-        <div className="overflow-x-auto">
+
+        {/* Mobile Card List */}
+        <div className="md:hidden divide-y divide-gray-100">
+          {stats.recentTransactions.length === 0 ? (
+            <div className="text-center py-8 text-gray-400">No transactions yet</div>
+          ) : stats.recentTransactions.map(t => (
+            <div key={t._id} className="px-4 py-3 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className="font-medium text-gray-900 text-sm truncate">{t.borrower?.name}</p>
+                <p className="text-xs text-gray-400">{new Date(t.date).toLocaleDateString('en-IN')} · {t.loan?.loanId}</p>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <p className="font-semibold text-green-700 text-sm">{fmt(t.amountPaid)}</p>
+                <span className={`${modeColors[t.mode]} badge text-[10px]`}>{t.mode}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop Table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
               <tr>
