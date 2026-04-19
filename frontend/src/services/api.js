@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  baseURL: 'https://daily-collection-vdxo.onrender.com',
+  baseURL: import.meta.env.VITE_API_URL || 'https://daily-collection-vdxo.onrender.com/api',
   headers: { 'Content-Type': 'application/json' }
 })
 
