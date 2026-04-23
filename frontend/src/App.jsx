@@ -11,6 +11,7 @@ import DailyReport from './pages/DailyReport'
 import Ledger from './pages/Ledger'
 import Reports from './pages/Reports'
 import Reminders from './pages/Reminders'
+import Expenses from './pages/Expenses'
 
 const ProtectedRoute = ({ children }) => {
   const { user, loading } = useAuth()
@@ -35,6 +36,7 @@ const AppRoutes = () => {
         <Route path="entries" element={<DailyEntries />} />
         <Route path="daily-report" element={<DailyReport />} />
         <Route path="reminders" element={<Reminders />} />
+        <Route path="expenses" element={<Expenses />} />
         <Route path="ledger" element={<Ledger />} />
         <Route path="reports" element={<Reports />} />
       </Route>

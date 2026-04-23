@@ -61,8 +61,8 @@ export default function Dashboard() {
         />
         <StatCard
           title="Outstanding Loans"
-          value={fmt(stats.outstandingLoans.totalPrincipal)}
-          sub={`${stats.outstandingLoans.count} active loans`}
+          value={fmt(stats.outstandingLoans.totalRemaining)}
+          sub={`₹${(stats.outstandingLoans.totalRemainingPrincipal || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} principal + ₹${(stats.outstandingLoans.totalRemainingInterest || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })} interest · ${stats.outstandingLoans.count} loans`}
           icon={CreditCard}
           color="bg-orange-500"
         />

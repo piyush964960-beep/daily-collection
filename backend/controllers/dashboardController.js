@@ -26,10 +26,52 @@ const getDashboardStats = async (req, res) => {
       { $group: { _id: null, total: { $sum: '$amountPaid' }, interest: { $sum: '$interestPortion' }, principal: { $sum: '$principalPortion' } } }
     ]);
 
-    // Outstanding loans
+    // Outstanding loans — total remaining (principal + interest) per loan
     const outstandingLoans = await Loan.aggregate([
       { $match: { status: 'Active' } },
-      { $group: { _id: null, totalPrincipal: { $sum: '$remainingPrincipal' }, count: { $sum: 1 } } }
+      {
+        $addFields: {
+          // New model: remaining = (principal + totalInterest) - (paidPrincipal + paidInterest)
+          // Legacy model: remaining = remainingPrincipal
+          _remaining: {
+            $cond: {
+              if: { $gt: [{ $ifNull: ['$totalInterest', 0] }, 0] },
+              then: {
+                $max: [0, {
+                  $subtract: [
+                    { $add: ['$principalAmount', '$totalInterest'] },
+                    { $add: [{ $ifNull: ['$totalPrincipalPaid', 0] }, { $ifNull: ['$totalInterestPaid', 0] }] }
+                  ]
+                }]
+              },
+              else: { $ifNull: ['$remainingPrincipal', 0] }
+            }
+          },
+          _remainingPrincipal: {
+            $cond: {
+              if: { $gt: [{ $ifNull: ['$totalInterest', 0] }, 0] },
+              then: { $max: [0, { $subtract: ['$principalAmount', { $ifNull: ['$totalPrincipalPaid', 0] }] }] },
+              else: { $ifNull: ['$remainingPrincipal', 0] }
+            }
+          },
+          _remainingInterest: {
+            $cond: {
+              if: { $gt: [{ $ifNull: ['$totalInterest', 0] }, 0] },
+              then: { $max: [0, { $subtract: ['$totalInterest', { $ifNull: ['$totalInterestPaid', 0] }] }] },
+              else: 0
+            }
+          }
+        }
+      },
+      {
+        $group: {
+          _id: null,
+          totalRemaining:          { $sum: '$_remaining' },
+          totalRemainingPrincipal: { $sum: '$_remainingPrincipal' },
+          totalRemainingInterest:  { $sum: '$_remainingInterest' },
+          count: { $sum: 1 }
+        }
+      }
     ]);
 
     // Account balances
@@ -91,7 +133,9 @@ const getDashboardStats = async (req, res) => {
           principal: monthEntries[0]?.principal || 0
         },
         outstandingLoans: {
-          totalPrincipal: outstandingLoans[0]?.totalPrincipal || 0,
+          totalRemaining:          parseFloat((outstandingLoans[0]?.totalRemaining          || 0).toFixed(2)),
+          totalRemainingPrincipal: parseFloat((outstandingLoans[0]?.totalRemainingPrincipal || 0).toFixed(2)),
+          totalRemainingInterest:  parseFloat((outstandingLoans[0]?.totalRemainingInterest  || 0).toFixed(2)),
           count: outstandingLoans[0]?.count || 0
         },
         accountBalances: balances,

@@ -1,7 +1,7 @@
 import { NavLink } from 'react-router-dom'
 import {
   LayoutDashboard, Users, CreditCard, BookOpen,
-  Wallet, BarChart3, TrendingUp, LogOut, PieChart, Bell, X
+  Wallet, BarChart3, TrendingUp, LogOut, PieChart, Bell, X, Receipt
 } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 
@@ -12,6 +12,7 @@ const navItems = [
   { to: '/entries', label: 'Daily Entries', icon: BookOpen },
   { to: '/daily-report', label: 'Daily Report', icon: PieChart },
   { to: '/reminders', label: 'Reminders', icon: Bell },
+  { to: '/expenses', label: 'Expenses', icon: Receipt },
   { to: '/ledger', label: 'Ledger', icon: Wallet },
   { to: '/reports', label: 'Reports', icon: BarChart3 }
 ]
