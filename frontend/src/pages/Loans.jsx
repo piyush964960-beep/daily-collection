@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Plus, Edit2, Trash2, Search, AlertTriangle, MapPin, X, Clock } from 'lucide-react'
+import { Plus, Edit2, Trash2, Search, AlertTriangle, MapPin, X, Clock, Calendar, MessageCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../services/api'
 import { useAuth } from '../context/AuthContext'
@@ -7,6 +7,42 @@ import Modal from '../components/ui/Modal'
 
 const fmt  = (n) => `₹${(n || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}`
 const fmtn = (n) => parseFloat((n || 0).toFixed(2))
+
+// ── WhatsApp helpers ─────────────────────────────────────────────────────────
+const fmtPhone = (phone = '') => {
+  const d = phone.replace(/\D/g, '')
+  return d.length === 10 ? `91${d}` : d
+}
+
+const sendLoanWhatsApp = (loan) => {
+  const name       = loan.borrower?.name  || 'Customer'
+  const phone      = loan.borrower?.phone || ''
+  const startDate  = loan.startDate  ? new Date(loan.startDate).toLocaleDateString('en-IN')  : '—'
+  const dueDate    = loan.completionDate ? new Date(loan.completionDate).toLocaleDateString('en-IN') : '—'
+  const totalLoan  = loan.totalLoanAmount || loan.principalAmount || 0
+  const daily      = loan.dailyAmount     || loan.interestAmount  || 0
+
+  const msg =
+`Dear ${name},
+
+Your loan has been created successfully! 🎉
+
+📋 *Loan Details:*
+• Loan ID: ${loan.loanId}
+• Start Date: ${startDate}
+• Principal: ${fmt(loan.principalAmount)}
+• Total Interest: ${fmt(loan.totalInterest || 0)}
+• *Total Payable: ${fmt(totalLoan)}*
+• Daily Payment: *${fmt(daily)}/day*
+• Duration: ${loan.duration} days
+• Expected Completion: ${dueDate}
+
+Please ensure timely daily payments.
+
+Thank you! 🙏`
+
+  window.open(`https://wa.me/${fmtPhone(phone)}?text=${encodeURIComponent(msg)}`, '_blank')
+}
 
 const EMPTY_FORM = {
   borrower:        '',
@@ -338,39 +374,63 @@ export default function Loans() {
               <span className="text-xs text-gray-500 w-8">{progress(l)}%</span>
             </div>
 
-            {/* Collection point + Completion */}
+            {/* Dates row */}
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mb-2">
+              {l.startDate && (
+                <div className="flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-gray-400" />
+                  <span>Start: <strong className="text-gray-700">{new Date(l.startDate).toLocaleDateString('en-IN')}</strong></span>
+                </div>
+              )}
+              {l.loanType === 'Daily' && l.completionDate && (
+                <div className="flex items-center gap-1">
+                  <Calendar className="w-3 h-3 text-gray-400" />
+                  <span className={l.isOverdue ? 'text-red-600' : ''}>
+                    Due: <strong>{new Date(l.completionDate).toLocaleDateString('en-IN')}</strong>
+                  </span>
+                </div>
+              )}
+            </div>
+
+            {/* Overdue banner */}
+            {l.isOverdue && (
+              <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5 mb-2">
+                <Clock className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                <span className="text-xs font-semibold text-red-600">
+                  {l.daysOverdue} {l.daysOverdue === 1 ? 'day' : 'days'} overdue
+                </span>
+              </div>
+            )}
+
+            {/* Collection point + Type */}
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mb-3">
               {l.collectionPoint && (
                 <div className="flex items-center gap-1">
                   <MapPin className="w-3 h-3" />{l.collectionPoint}
                 </div>
               )}
-              {l.loanType === 'Daily' && l.completionDate ? (
-                <div>
-                  <span className={l.isOverdue ? 'text-red-600 font-medium' : ''}>
-                    {new Date(l.completionDate).toLocaleDateString('en-IN')}
-                  </span>
-                  {l.isOverdue && (
-                    <span className="text-red-500 ml-1">
-                      <Clock className="w-3 h-3 inline" /> {l.daysOverdue}d past due
-                    </span>
-                  )}
-                </div>
-              ) : null}
               <span className={l.loanType === 'Daily' ? 'badge-blue' : 'badge-yellow'}>{l.loanType || 'Daily'}</span>
             </div>
 
             {/* Action buttons */}
-            {isAdmin && (
-              <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
-                <button onClick={() => handleEdit(l)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm text-gray-600 hover:text-primary-600 hover:bg-primary-50 transition-colors border border-gray-200">
-                  <Edit2 className="w-4 h-4" /> Edit
-                </button>
-                <button onClick={() => handleDelete(l._id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm text-gray-600 hover:text-red-600 hover:bg-red-50 transition-colors border border-gray-200">
-                  <Trash2 className="w-4 h-4" /> Delete
-                </button>
-              </div>
-            )}
+            <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+              <button
+                onClick={() => sendLoanWhatsApp(l)}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm text-green-600 hover:text-green-700 hover:bg-green-50 transition-colors border border-green-200"
+              >
+                <MessageCircle className="w-4 h-4" /> WhatsApp
+              </button>
+              {isAdmin && (
+                <>
+                  <button onClick={() => handleEdit(l)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm text-gray-600 hover:text-primary-600 hover:bg-primary-50 transition-colors border border-gray-200">
+                    <Edit2 className="w-4 h-4" /> Edit
+                  </button>
+                  <button onClick={() => handleDelete(l._id)} className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-sm text-gray-600 hover:text-red-600 hover:bg-red-50 transition-colors border border-gray-200">
+                    <Trash2 className="w-4 h-4" /> Delete
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         ))}
       </div>
@@ -381,20 +441,20 @@ export default function Loans() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 text-gray-500 uppercase text-xs">
               <tr>
-                {['Loan ID', 'Borrower', 'Type', 'Daily Payment', 'Remaining', 'Progress', 'Collection Point', 'Completion', 'Status', 'Actions'].map(h => (
+                {['Loan ID', 'Borrower', 'Type', 'Daily Payment', 'Remaining', 'Progress', 'Collection Point', 'Start Date', 'Completion', 'Status', 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left font-medium whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {loading ? (
-                <tr><td colSpan={10} className="text-center py-12">
+                <tr><td colSpan={11} className="text-center py-12">
                   <div className="flex justify-center">
                     <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary-600 border-t-transparent" />
                   </div>
                 </td></tr>
               ) : loans.length === 0 ? (
-                <tr><td colSpan={10} className="text-center py-12 text-gray-400">No loans found</td></tr>
+                <tr><td colSpan={11} className="text-center py-12 text-gray-400">No loans found</td></tr>
               ) : loans.map(l => (
                 <tr key={l._id} className={`hover:bg-gray-50/50 ${
                   l.isOverdue ? 'border-l-2 border-l-red-400 bg-red-50/20' :
@@ -461,6 +521,14 @@ export default function Loans() {
                       <div className="flex items-center gap-1"><MapPin className="w-3 h-3" />{l.collectionPoint}</div>
                     ) : <span className="text-gray-300">—</span>}
                   </td>
+                  {/* Start Date */}
+                  <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
+                    {l.startDate
+                      ? <div className="flex items-center gap-1"><Calendar className="w-3 h-3 text-gray-400" />{new Date(l.startDate).toLocaleDateString('en-IN')}</div>
+                      : <span className="text-gray-300">—</span>
+                    }
+                  </td>
+                  {/* Completion + Overdue */}
                   <td className="px-4 py-3 whitespace-nowrap">
                     {l.loanType === 'Daily' && l.completionDate ? (
                       <div>
@@ -468,9 +536,9 @@ export default function Loans() {
                           {new Date(l.completionDate).toLocaleDateString('en-IN')}
                         </span>
                         {l.isOverdue && (
-                          <div className="text-[11px] text-red-500 mt-0.5 flex items-center gap-0.5">
-                            <Clock className="w-3 h-3" />
-                            {l.daysOverdue}d past due
+                          <div className="flex items-center gap-1 mt-1 bg-red-50 border border-red-200 rounded px-1.5 py-0.5 w-fit">
+                            <Clock className="w-3 h-3 text-red-500" />
+                            <span className="text-[11px] font-semibold text-red-600">{l.daysOverdue} days overdue</span>
                           </div>
                         )}
                       </div>
@@ -479,19 +547,19 @@ export default function Loans() {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex flex-col gap-1">
-                      <span className={l.status === 'Active' ? 'badge-green' : 'badge-gray'}>{l.status}</span>
-                      {l.isOverdue && (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-600 bg-red-50 border border-red-200 px-1.5 py-0.5 rounded-full w-fit">
-                          <Clock className="w-2.5 h-2.5" />
-                          OVERDUE
-                        </span>
-                      )}
-                    </div>
+                    <span className={l.status === 'Active' ? 'badge-green' : 'badge-gray'}>{l.status}</span>
                   </td>
                   <td className="px-4 py-3">
-                    {isAdmin && (
-                      <div className="flex gap-2">
+                    <div className="flex gap-1.5 items-center">
+                      <button
+                        onClick={() => sendLoanWhatsApp(l)}
+                        title="Send WhatsApp reminder"
+                        className="p-1.5 rounded text-green-500 hover:text-green-700 hover:bg-green-50 transition-colors"
+                      >
+                        <MessageCircle className="w-4 h-4" />
+                      </button>
+                      {isAdmin && (
+                      <div className="flex gap-1.5">
                         <button onClick={() => handleEdit(l)} className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50 transition-colors">
                           <Edit2 className="w-4 h-4" />
                         </button>
@@ -499,7 +567,8 @@ export default function Loans() {
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
-                    )}
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

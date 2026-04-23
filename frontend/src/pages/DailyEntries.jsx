@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Trash2, History, CheckCircle2, X, ChevronDown, ChevronUp, BarChart2, Layers } from 'lucide-react'
+import { Plus, Trash2, History, CheckCircle2, X, ChevronDown, ChevronUp, BarChart2, Layers, ArrowUpDown, MessageCircle } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../services/api'
 import { useAuth } from '../context/AuthContext'
@@ -36,6 +36,14 @@ const PAYMENT_MODES = ['Cash', 'Piyush', 'Sanjay', 'Online']
 const MODE_COLORS   = { Cash: 'badge-blue', Piyush: 'badge-green', Sanjay: 'badge-yellow', Online: 'badge-gray' }
 const ACCOUNT_BG    = { Cash: 'bg-blue-50 text-blue-800', Piyush: 'bg-green-50 text-green-800', Sanjay: 'bg-yellow-50 text-yellow-800', Online: 'bg-gray-50 text-gray-800' }
 
+// ── WhatsApp helpers ─────────────────────────────────────────────────────────
+const fmtPhone = (phone = '') => {
+  const d = phone.replace(/\D/g, '')
+  return d.length === 10 ? `91${d}` : d
+}
+const openWA = (phone, msg) =>
+  window.open(`https://wa.me/${fmtPhone(phone)}?text=${encodeURIComponent(msg)}`, '_blank')
+
 export default function DailyEntries() {
   const { isAdmin } = useAuth()
   const navigate    = useNavigate()
@@ -48,6 +56,18 @@ export default function DailyEntries() {
   const [expandedRows,  setExpandedRows]  = useState({})   // loanId → bool (individual mode)
   const [rowPayments,   setRowPayments]   = useState({})   // loanId → [{mode, amount, accountName}]
   const [savingRow,     setSavingRow]     = useState({})   // loanId → bool
+
+  // ── Sort ─────────────────────────────────────────────────────────────────
+  const [sortEntries, setSortEntries] = useState('')
+
+  // ── WhatsApp dropdown (loanId of open menu, or null) ─────────────────────
+  const [waMenu, setWaMenu] = useState(null)
+  useEffect(() => {
+    if (!waMenu) return
+    const close = () => setWaMenu(null)
+    document.addEventListener('click', close, true)
+    return () => document.removeEventListener('click', close, true)
+  }, [waMenu])
 
   // ── Entry mode ────────────────────────────────────────────────────────────
   const [entryMode,  setEntryMode]  = useState('individual')
@@ -148,6 +168,43 @@ export default function DailyEntries() {
     catch (err) { toast.error(err.response?.data?.message || 'Failed') }
   }
 
+  // ── WhatsApp senders ─────────────────────────────────────────────────────
+  const sendDailyReminder = (row) => {
+    const name  = row.borrower.name
+    const phone = row.borrower.phone || ''
+    const msg =
+`Dear ${name},
+
+💰 *Daily Payment Reminder*
+
+Loan ID: ${row.loan.loanId}
+Today's Payment: *${fmt(row.dailyAmount)}*
+Remaining Amount: *${fmt(row.remainingAmount)}*
+
+Please make your payment today.
+
+Thank you! 🙏`
+    openWA(phone, msg)
+    setWaMenu(null)
+  }
+
+  const sendRemainingBalance = (row) => {
+    const name  = row.borrower.name
+    const phone = row.borrower.phone || ''
+    const msg =
+`Dear ${name},
+
+📊 *Loan Balance Update*
+
+Loan ID: ${row.loan.loanId}
+Total Remaining: *${fmt(row.remainingAmount)}*
+Daily Payment: *${fmt(row.dailyAmount)}/day*
+
+Thank you! 🙏`
+    openWA(phone, msg)
+    setWaMenu(null)
+  }
+
   // ── Bulk mode helpers ─────────────────────────────────────────────────────
 
   const updateBulk = (loanId, index, field, value) =>
@@ -169,38 +226,46 @@ export default function DailyEntries() {
   const getBulkTotal = (loanId) =>
     (bulkInputs[loanId] || []).reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
 
-  // ── Real-time bulk aggregation ────────────────────────────────────────────
+  // ── Real-time bulk aggregation (includes interest/principal split) ────────
   const bulkAgg = useMemo(() => {
-    const acc = { total: 0, Cash: 0, Piyush: 0, Sanjay: 0, Online: 0 }
-    Object.values(bulkInputs).forEach(payments => {
+    const acc = { total: 0, Cash: 0, Piyush: 0, Sanjay: 0, Online: 0, interest: 0, principal: 0 }
+    borrowerTable.forEach(row => {
+      const loanId  = row.loan._id
+      const payments = bulkInputs[loanId]
       if (!Array.isArray(payments)) return
+      const rowTotal = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+      if (rowTotal > 0) {
+        const split = calcSplit(row.dailyInterestAmount, row.dailyPrincipalAmount, row.loan.remainingPrincipal, rowTotal)
+        acc.interest  = parseFloat((acc.interest  + split.interest).toFixed(2))
+        acc.principal = parseFloat((acc.principal + split.principal).toFixed(2))
+      }
       payments.forEach(p => {
         const amt = parseFloat(p.amount) || 0
         if (amt > 0) {
           acc[p.mode] = (acc[p.mode] || 0) + amt
-          acc.total += amt
+          acc.total   += amt
         }
       })
     })
     return acc
-  }, [bulkInputs])
+  }, [bulkInputs, borrowerTable])
 
   const saveAllBulk = async () => {
     const pendingRows = borrowerTable.filter(r => !r.todayEntry)
-    const toSubmit    = pendingRows.filter(r => {
-      const pmts = bulkInputs[r.loan._id]
-      return Array.isArray(pmts) && pmts.some(p => parseFloat(p.amount) > 0)
-    })
-    if (!toSubmit.length) { toast.error('Enter at least one amount'); return }
+    if (!pendingRows.length) { toast.error('No pending entries'); return }
 
     setBulkSaving(true)
     const results = await Promise.allSettled(
-      toSubmit.map(row => {
+      pendingRows.map(row => {
         const pmts = (bulkInputs[row.loan._id] || []).filter(p => parseFloat(p.amount) > 0)
+        // If nothing filled → default to ₹0 (marks as visited / no payment today)
+        const payments = pmts.length > 0
+          ? pmts.map(p => ({ mode: p.mode, amount: parseFloat(p.amount), accountName: p.accountName || '' }))
+          : [{ mode: 'Cash', amount: 0, accountName: '' }]
         return api.post('/daily-entries', {
           borrower: row.borrower._id,
           loan:     row.loan._id,
-          payments: pmts.map(p => ({ mode: p.mode, amount: parseFloat(p.amount), accountName: p.accountName || '' })),
+          payments,
           date:     selectedDate,
           notes:    ''
         })
@@ -242,6 +307,71 @@ export default function DailyEntries() {
   }, [historyFilters, collectedByFilter])
 
   useEffect(() => { if (activeTab === 'history') fetchHistory() }, [activeTab, fetchHistory])
+
+  // ── Sorted borrower table ────────────────────────────────────────────────
+  const sortedBorrowerTable = useMemo(() => {
+    if (!sortEntries) return borrowerTable
+    const arr = [...borrowerTable]
+    switch (sortEntries) {
+      case 'name_asc':
+        return arr.sort((a, b) => a.borrower.name.localeCompare(b.borrower.name))
+      case 'name_desc':
+        return arr.sort((a, b) => b.borrower.name.localeCompare(a.borrower.name))
+      case 'collector_asc':
+        return arr.sort((a, b) => {
+          const ca = a.borrower.assignedCollector?.name || ''
+          const cb = b.borrower.assignedCollector?.name || ''
+          return ca.localeCompare(cb) || a.borrower.name.localeCompare(b.borrower.name)
+        })
+      case 'collector_desc':
+        return arr.sort((a, b) => {
+          const ca = a.borrower.assignedCollector?.name || ''
+          const cb = b.borrower.assignedCollector?.name || ''
+          return cb.localeCompare(ca) || a.borrower.name.localeCompare(b.borrower.name)
+        })
+      case 'pending_first':
+        return arr.sort((a, b) => {
+          if (!a.todayEntry && b.todayEntry) return -1
+          if (a.todayEntry && !b.todayEntry) return 1
+          return a.borrower.name.localeCompare(b.borrower.name)
+        })
+      case 'paid_first':
+        return arr.sort((a, b) => {
+          if (a.todayEntry && !b.todayEntry) return -1
+          if (!a.todayEntry && b.todayEntry) return 1
+          return a.borrower.name.localeCompare(b.borrower.name)
+        })
+      default:
+        return arr
+    }
+  }, [borrowerTable, sortEntries])
+
+  // ── Day-level running totals (paid + in-progress individual entries) ──────
+  const dayAgg = useMemo(() => {
+    const acc = { total: 0, interest: 0, principal: 0 }
+    borrowerTable.forEach(row => {
+      if (row.todayEntry) {
+        // Already saved entry
+        acc.total     += row.todayEntry.amountPaid     || 0
+        acc.interest  += row.todayEntry.interestPortion  || 0
+        acc.principal += row.todayEntry.principalPortion || 0
+      } else {
+        // Live unsaved input (individual mode)
+        const payments = rowPayments[row.loan._id] || []
+        const rowTotal = payments.reduce((s, p) => s + (parseFloat(p.amount) || 0), 0)
+        if (rowTotal > 0) {
+          const split = calcSplit(row.dailyInterestAmount, row.dailyPrincipalAmount, row.loan.remainingPrincipal, rowTotal)
+          acc.total     += rowTotal
+          acc.interest  += split.interest
+          acc.principal += split.principal
+        }
+      }
+    })
+    acc.total     = parseFloat(acc.total.toFixed(2))
+    acc.interest  = parseFloat(acc.interest.toFixed(2))
+    acc.principal = parseFloat(acc.principal.toFixed(2))
+    return acc
+  }, [borrowerTable, rowPayments])
 
   // ── Counts ────────────────────────────────────────────────────────────────
   const pendingCount = borrowerTable.filter(r => !r.todayEntry).length
@@ -294,8 +424,24 @@ export default function DailyEntries() {
               </div>
             </div>
 
-            {/* Counts + View Report */}
+            {/* Sort + Counts + View Report */}
             <div className="flex flex-wrap gap-2 items-center sm:ml-auto">
+              <div className="flex items-center gap-1.5">
+                <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />
+                <select
+                  className="input w-auto text-xs py-1.5"
+                  value={sortEntries}
+                  onChange={e => setSortEntries(e.target.value)}
+                >
+                  <option value="">Sort: Default</option>
+                  <option value="name_asc">Name A → Z</option>
+                  <option value="name_desc">Name Z → A</option>
+                  <option value="collector_asc">Collector A → Z</option>
+                  <option value="collector_desc">Collector Z → A</option>
+                  <option value="pending_first">Pending First</option>
+                  <option value="paid_first">Paid First</option>
+                </select>
+              </div>
               <span className="badge bg-yellow-100 text-yellow-800">{pendingCount} Pending</span>
               <span className="badge-green">{paidCount} Paid</span>
               <button
@@ -307,6 +453,30 @@ export default function DailyEntries() {
             </div>
           </div>
 
+          {/* ── DAY RUNNING TOTALS BANNER (both modes) ──────────────────────── */}
+          {dayAgg.total > 0 && (
+            <div className="card p-3 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-100">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-[90px]">
+                  <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Today's Total</p>
+                  <p className="text-xl font-bold text-green-700">{fmt(dayAgg.total)}</p>
+                </div>
+                <div className="h-8 w-px bg-green-200 hidden sm:block" />
+                <div className="flex gap-2 flex-wrap">
+                  <div className="bg-orange-50 border border-orange-200 px-3 py-1.5 rounded-lg">
+                    <p className="text-[11px] text-gray-500">Interest</p>
+                    <p className="font-bold text-orange-600 text-sm">{fmt(dayAgg.interest)}</p>
+                  </div>
+                  <div className="bg-blue-50 border border-blue-200 px-3 py-1.5 rounded-lg">
+                    <p className="text-[11px] text-gray-500">Principal</p>
+                    <p className="font-bold text-blue-600 text-sm">{fmt(dayAgg.principal)}</p>
+                  </div>
+                </div>
+                <span className="text-xs text-gray-400 sm:ml-auto">{paidCount} collected · {pendingCount} pending</span>
+              </div>
+            </div>
+          )}
+
           {/* ── INDIVIDUAL MODE ────────────────────────────────────────────── */}
           {entryMode === 'individual' && (
             <div className="card overflow-hidden">
@@ -314,11 +484,11 @@ export default function DailyEntries() {
                 <div className="flex justify-center py-16">
                   <div className="animate-spin rounded-full h-10 w-10 border-4 border-primary-600 border-t-transparent" />
                 </div>
-              ) : borrowerTable.length === 0 ? (
+              ) : sortedBorrowerTable.length === 0 ? (
                 <div className="text-center py-16 text-gray-400">No active loans found</div>
               ) : (
                 <div className="divide-y divide-gray-100">
-                  {borrowerTable.map((row) => {
+                  {sortedBorrowerTable.map((row) => {
                     const loanId     = row.loan._id
                     const isExpanded = expandedRows[loanId]
                     const payments   = rowPayments[loanId] || [emptyPayment()]
@@ -365,6 +535,41 @@ export default function DailyEntries() {
                               <button onClick={() => openHistory(row.borrower)} className="p-1.5 rounded text-gray-400 hover:text-primary-600 hover:bg-primary-50" title="History">
                                 <History className="w-4 h-4" />
                               </button>
+                              {/* WhatsApp dropdown */}
+                              <div className="relative">
+                                <button
+                                  onClick={() => setWaMenu(waMenu === loanId ? null : loanId)}
+                                  className="p-1.5 rounded text-green-500 hover:text-green-700 hover:bg-green-50"
+                                  title="WhatsApp Reminder"
+                                >
+                                  <MessageCircle className="w-4 h-4" />
+                                </button>
+                                {waMenu === loanId && (
+                                  <div className="absolute right-0 top-8 z-20 bg-white border border-gray-200 rounded-xl shadow-lg w-52 py-1 text-sm">
+                                    <button
+                                      onClick={() => sendDailyReminder(row)}
+                                      className="w-full text-left px-4 py-2.5 hover:bg-green-50 flex items-center gap-2"
+                                    >
+                                      <MessageCircle className="w-4 h-4 text-green-500" />
+                                      <div>
+                                        <p className="font-medium text-gray-800">Daily Reminder</p>
+                                        <p className="text-xs text-gray-400">{fmt(row.dailyAmount)} due today</p>
+                                      </div>
+                                    </button>
+                                    <div className="border-t border-gray-100" />
+                                    <button
+                                      onClick={() => sendRemainingBalance(row)}
+                                      className="w-full text-left px-4 py-2.5 hover:bg-blue-50 flex items-center gap-2"
+                                    >
+                                      <MessageCircle className="w-4 h-4 text-blue-500" />
+                                      <div>
+                                        <p className="font-medium text-gray-800">Remaining Balance</p>
+                                        <p className="text-xs text-gray-400">{fmt(row.remainingAmount)} remaining</p>
+                                      </div>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </div>
                         </div>
@@ -466,32 +671,48 @@ export default function DailyEntries() {
                 <>
                   {/* ── Real-time aggregation banner ──────────────────────── */}
                   {bulkAgg.total > 0 && (
-                    <div className="card p-4 bg-gradient-to-r from-primary-50 to-indigo-50 border border-primary-100">
-                      <div className="flex flex-wrap items-center gap-4">
-                        <div>
+                    <div className="card p-4 bg-gradient-to-r from-primary-50 to-indigo-50 border border-primary-100 space-y-3">
+                      {/* Row 1: Running total + Interest + Principal */}
+                      <div className="flex flex-wrap items-center gap-3">
+                        <div className="min-w-[100px]">
                           <p className="text-xs text-gray-500 uppercase tracking-wide font-medium">Running Total</p>
                           <p className="text-2xl font-bold text-primary-700">{fmt(bulkAgg.total)}</p>
                         </div>
-                        <div className="flex flex-wrap gap-3 ml-4">
+                        <div className="h-10 w-px bg-primary-200 hidden sm:block" />
+                        <div className="flex gap-3 flex-wrap">
+                          <div className="bg-orange-50 border border-orange-200 px-3 py-2 rounded-xl">
+                            <p className="text-xs text-gray-500 font-medium">Interest</p>
+                            <p className="font-bold text-orange-600 text-sm">{fmt(bulkAgg.interest)}</p>
+                          </div>
+                          <div className="bg-blue-50 border border-blue-200 px-3 py-2 rounded-xl">
+                            <p className="text-xs text-gray-500 font-medium">Principal</p>
+                            <p className="font-bold text-blue-600 text-sm">{fmt(bulkAgg.principal)}</p>
+                          </div>
+                        </div>
+                      </div>
+                      {/* Row 2: Per-mode breakdown */}
+                      {PAYMENT_MODES.some(m => (bulkAgg[m] || 0) > 0) && (
+                        <div className="flex flex-wrap gap-2 pt-2 border-t border-primary-100">
+                          <span className="text-xs text-gray-400 self-center mr-1">By account:</span>
                           {PAYMENT_MODES.filter(m => (bulkAgg[m] || 0) > 0).map(mode => (
-                            <div key={mode} className={`px-3 py-2 rounded-xl text-sm font-medium ${ACCOUNT_BG[mode]}`}>
-                              <span className="opacity-70 text-xs block">{mode}</span>
+                            <div key={mode} className={`px-3 py-1.5 rounded-lg text-sm font-medium ${ACCOUNT_BG[mode]}`}>
+                              <span className="opacity-70 text-xs">{mode}: </span>
                               <span className="font-bold">{fmt(bulkAgg[mode])}</span>
                             </div>
                           ))}
                         </div>
-                      </div>
+                      )}
                     </div>
                   )}
 
                   {/* ── Pending rows ──────────────────────────────────────── */}
-                  {borrowerTable.filter(r => !r.todayEntry).length > 0 && (
+                  {sortedBorrowerTable.filter(r => !r.todayEntry).length > 0 && (
                     <div className="card overflow-hidden">
                       <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
                         <h3 className="text-sm font-semibold text-gray-700">Pending Payments ({pendingCount})</h3>
                       </div>
                       <div className="divide-y divide-gray-100">
-                        {borrowerTable.filter(r => !r.todayEntry).map(row => {
+                        {sortedBorrowerTable.filter(r => !r.todayEntry).map(row => {
                           const loanId    = row.loan._id
                           const pmts      = bulkInputs[loanId] || [emptyPayment()]
                           const bulkTotal = getBulkTotal(loanId)
@@ -578,13 +799,13 @@ export default function DailyEntries() {
                   )}
 
                   {/* Already paid today */}
-                  {borrowerTable.filter(r => r.todayEntry).length > 0 && (
+                  {sortedBorrowerTable.filter(r => r.todayEntry).length > 0 && (
                     <div className="card overflow-hidden">
                       <div className="px-4 py-3 bg-green-50 border-b border-green-100">
                         <h3 className="text-sm font-semibold text-green-700">Paid Today ({paidCount})</h3>
                       </div>
                       <div className="divide-y divide-gray-50">
-                        {borrowerTable.filter(r => r.todayEntry).map(row => (
+                        {sortedBorrowerTable.filter(r => r.todayEntry).map(row => (
                           <div key={row.loan._id} className="px-4 py-2.5 flex flex-wrap items-center gap-2 sm:gap-3 bg-green-50/30 text-sm">
                             <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0" />
                             <span className="font-medium text-gray-900">{row.borrower.name}</span>
@@ -604,7 +825,7 @@ export default function DailyEntries() {
                   )}
 
                   {/* Save All button */}
-                  {borrowerTable.filter(r => !r.todayEntry).length > 0 && (
+                  {sortedBorrowerTable.filter(r => !r.todayEntry).length > 0 && (
                     <button onClick={saveAllBulk} disabled={bulkSaving} className="btn-primary w-full justify-center py-3">
                       {bulkSaving
                         ? <span className="animate-spin h-5 w-5 border-2 border-white border-t-transparent rounded-full" />
