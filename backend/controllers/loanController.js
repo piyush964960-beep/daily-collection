@@ -211,7 +211,7 @@ const getLoan = async (req, res) => {
 // @PUT /api/loans/:id
 const updateLoan = async (req, res) => {
   try {
-    const { interestRate, totalInterest, duration, status, collectionPoint, isDefault, notes, loanType } = req.body;
+    const { interestRate, totalInterest, duration, status, collectionPoint, isDefault, notes, loanType, startDate } = req.body;
 
     const loan = await Loan.findById(req.params.id);
     if (!loan) return res.status(404).json({ success: false, message: 'Loan not found' });
@@ -225,6 +225,7 @@ const updateLoan = async (req, res) => {
     if (isDefault !== undefined) loan.isDefault = isDefault;
     if (notes !== undefined) loan.notes = notes;
     if (loanType !== undefined) loan.loanType = loanType;
+    if (startDate) loan.startDate = new Date(startDate);
 
     await loan.save(); // triggers pre-save to recompute completionDate
     await loan.populate('borrower', 'name phone');

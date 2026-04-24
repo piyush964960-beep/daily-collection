@@ -103,8 +103,14 @@ const loanSchema = new mongoose.Schema({
 // Auto-generate loanId and set completionDate
 loanSchema.pre('save', async function(next) {
   if (!this.loanId) {
-    const count = await mongoose.model('Loan').countDocuments();
-    this.loanId = `LN${String(count + 1).padStart(5, '0')}`;
+    // Use the highest existing loanId number (not count) so deletes never cause collisions
+    const last = await mongoose.model('Loan').findOne({}, { loanId: 1 }).sort({ loanId: -1 }).lean();
+    let nextNum = 1;
+    if (last?.loanId) {
+      const parsed = parseInt(last.loanId.replace('LN', ''), 10);
+      if (!isNaN(parsed)) nextNum = parsed + 1;
+    }
+    this.loanId = `LN${String(nextNum).padStart(5, '0')}`;
   }
   if (this.isNew) {
     this.remainingPrincipal = this.principalAmount;

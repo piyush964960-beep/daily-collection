@@ -178,6 +178,7 @@ export default function Loans() {
           totalInterest:   form.totalInterest  !== '' ? parseFloat(form.totalInterest)  : undefined,
           interestRate:    form.interestRate   !== '' ? parseFloat(form.interestRate)   : undefined,
           duration:        form.duration,
+          startDate:       form.startDate      || undefined,
           status:          form.status,
           loanType:        form.loanType,
           collectionPoint: form.collectionPoint,
@@ -821,15 +822,27 @@ export default function Loans() {
             </div>
           )}
 
-          {/* Start Date (create only) */}
-          {!editLoan && (
-            <div>
-              <label className="label">Start Date</label>
-              <input type="date" className="input" value={form.startDate} onChange={e => setForm(p => ({...p, startDate: e.target.value}))} required />
-            </div>
-          )}
+          {/* Start Date (create + edit) */}
+          <div>
+            <label className="label">Start Date</label>
+            <input
+              type="date" className="input"
+              value={form.startDate}
+              onChange={e => setForm(p => ({...p, startDate: e.target.value}))}
+              required
+            />
+            {editLoan && form.loanType === 'Daily' && form.startDate && form.duration && (
+              <p className="text-xs text-blue-600 mt-1">
+                New completion date:{' '}
+                <strong>
+                  {new Date(new Date(form.startDate).getTime() + parseFloat(form.duration) * 86400000).toLocaleDateString('en-IN')}
+                </strong>
+                {' '}({form.duration} days)
+              </p>
+            )}
+          </div>
 
-          {/* Completion date preview */}
+          {/* Completion date preview (create only) */}
           {previewCompletionDate && !editLoan && (
             <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-700">
               Completion date: <strong>{previewCompletionDate}</strong> ({dur} days from start)
