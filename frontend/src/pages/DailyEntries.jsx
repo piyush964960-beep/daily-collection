@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Plus, Trash2, History, CheckCircle2, X, ChevronDown, ChevronUp, BarChart2, Layers, ArrowUpDown, MessageCircle } from 'lucide-react'
+import { Plus, Trash2, History, CheckCircle2, X, ChevronDown, ChevronUp, BarChart2, Layers, ArrowUpDown, MessageCircle, Calculator } from 'lucide-react'
 import toast from 'react-hot-toast'
 import api from '../services/api'
 import { useAuth } from '../context/AuthContext'
@@ -69,6 +69,72 @@ export default function DailyEntries() {
     document.addEventListener('click', close, true)
     return () => document.removeEventListener('click', close, true)
   }, [waMenu])
+
+  // ── Floating calculator ───────────────────────────────────────────────────
+  const [calcOpen,    setCalcOpen]    = useState(false)
+  const [calcDisplay, setCalcDisplay] = useState('0')
+  const [calcExpr,    setCalcExpr]    = useState('')
+  const [calcPrev,    setCalcPrev]    = useState(null)
+  const [calcOp,      setCalcOp]      = useState(null)
+  const [calcWaiting, setCalcWaiting] = useState(false)
+
+  const doCalc = (a, b, op) => {
+    const r = op === '+' ? a + b : op === '−' ? a - b : op === '×' ? a * b : op === '÷' ? (b !== 0 ? a / b : NaN) : b
+    return isFinite(r) ? parseFloat(r.toFixed(10)) : NaN
+  }
+
+  const calcPress = (btn) => {
+    if (btn === 'AC') {
+      setCalcDisplay('0'); setCalcExpr(''); setCalcPrev(null); setCalcOp(null); setCalcWaiting(false)
+      return
+    }
+    if (btn === '⌫') {
+      setCalcDisplay(d => d.length > 1 ? d.slice(0, -1) : '0')
+      return
+    }
+    if (btn === '+/-') {
+      setCalcDisplay(d => d.startsWith('-') ? d.slice(1) : d === '0' ? '0' : '-' + d)
+      return
+    }
+    if (btn === '%') {
+      setCalcDisplay(d => String(parseFloat((parseFloat(d) / 100).toFixed(10))))
+      return
+    }
+    if (['+', '−', '×', '÷'].includes(btn)) {
+      const curr = parseFloat(calcDisplay)
+      if (calcPrev !== null && !calcWaiting) {
+        const result = doCalc(calcPrev, curr, calcOp)
+        const res = isNaN(result) ? 'Error' : String(parseFloat(result.toFixed(10)))
+        setCalcDisplay(res)
+        setCalcPrev(isNaN(result) ? null : result)
+        setCalcExpr(res + ' ' + btn)
+      } else {
+        setCalcPrev(curr)
+        setCalcExpr(calcDisplay + ' ' + btn)
+      }
+      setCalcOp(btn); setCalcWaiting(true)
+      return
+    }
+    if (btn === '=') {
+      if (calcOp !== null && calcPrev !== null) {
+        const curr = parseFloat(calcDisplay)
+        const result = doCalc(calcPrev, curr, calcOp)
+        const res = isNaN(result) ? 'Error' : String(parseFloat(result.toFixed(10)))
+        setCalcExpr(e => e + ' ' + calcDisplay + ' =')
+        setCalcDisplay(res)
+        setCalcPrev(null); setCalcOp(null); setCalcWaiting(false)
+      }
+      return
+    }
+    // digit or decimal
+    if (calcWaiting) {
+      setCalcDisplay(btn === '.' ? '0.' : btn)
+      setCalcWaiting(false)
+    } else {
+      if (btn === '.' && calcDisplay.includes('.')) return
+      setCalcDisplay(d => d === '0' && btn !== '.' ? btn : d.length < 15 ? d + btn : d)
+    }
+  }
 
   // ── Entry mode ────────────────────────────────────────────────────────────
   const [entryMode,  setEntryMode]  = useState('individual')
@@ -1156,6 +1222,105 @@ Thank you! 🙏`
           )}
         </div>
       )}
+
+      {/* ══ FLOATING CALCULATOR ══════════════════════════════════════════════ */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+
+        {/* Calculator panel */}
+        {calcOpen && (
+          <div
+            className="bg-white rounded-2xl shadow-2xl border border-gray-200 w-64 overflow-hidden"
+            onMouseDown={e => e.stopPropagation()}   /* don't steal focus from inputs */
+            onClick={e => e.stopPropagation()}        /* don't close WA dropdown */
+          >
+            {/* Title bar */}
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-900">
+              <span className="text-[11px] text-gray-400 font-semibold tracking-widest uppercase">Calculator</span>
+              <button
+                onClick={() => setCalcOpen(false)}
+                className="text-gray-500 hover:text-white transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Display */}
+            <div className="bg-gray-900 px-4 pt-2 pb-3 text-right border-b border-gray-800">
+              <p className="text-gray-500 text-xs min-h-[14px] truncate font-mono">{calcExpr || '\u00A0'}</p>
+              <p className={`font-light mt-1 truncate font-mono tracking-tight ${
+                calcDisplay.length > 12 ? 'text-lg' : calcDisplay.length > 9 ? 'text-xl' : 'text-3xl'
+              } ${calcDisplay === 'Error' ? 'text-red-400' : 'text-white'}`}>
+                {calcDisplay}
+              </p>
+            </div>
+
+            {/* Button grid — 4 columns */}
+            <div className="bg-gray-800 p-1.5 space-y-1.5">
+              {[
+                [['AC','fn'], ['⌫','fn'], ['%','fn'], ['÷','op']],
+                [['7','num'], ['8','num'], ['9','num'], ['×','op']],
+                [['4','num'], ['5','num'], ['6','num'], ['−','op']],
+                [['1','num'], ['2','num'], ['3','num'], ['+','op']],
+                [['0','num','wide'], ['.','num'], ['=','eq']],
+              ].map((row, ri) => (
+                <div key={ri} className="grid grid-cols-4 gap-1.5">
+                  {row.map(([btn, type, wide]) => {
+                    const isActiveOp = calcOp === btn && calcWaiting
+                    const base = 'flex items-center justify-center h-12 rounded-xl text-base font-semibold cursor-pointer transition-all duration-100 active:scale-95 select-none'
+                    const styles = {
+                      num: 'bg-gray-700 text-white hover:bg-gray-600',
+                      fn:  btn === 'AC'
+                             ? 'bg-red-500/80 text-white hover:bg-red-500'
+                             : 'bg-gray-600 text-white hover:bg-gray-500',
+                      op:  isActiveOp
+                             ? 'bg-white text-orange-500'
+                             : 'bg-orange-500 text-white hover:bg-orange-400',
+                      eq:  'bg-green-500 text-white hover:bg-green-400',
+                    }
+                    return (
+                      <button
+                        key={btn}
+                        onMouseDown={e => e.preventDefault()} /* keep focus on current input */
+                        onClick={() => calcPress(btn)}
+                        className={`${base} ${styles[type]} ${wide ? 'col-span-2' : ''}`}
+                      >
+                        {btn}
+                      </button>
+                    )
+                  })}
+                </div>
+              ))}
+            </div>
+
+            {/* Result copy hint */}
+            {calcDisplay !== '0' && calcDisplay !== 'Error' && (
+              <div className="bg-gray-900 px-3 py-1.5 flex items-center justify-between">
+                <span className="text-[10px] text-gray-600">Result</span>
+                <button
+                  onMouseDown={e => e.preventDefault()}
+                  onClick={() => { navigator.clipboard?.writeText(calcDisplay); toast.success('Copied!') }}
+                  className="text-[10px] text-gray-400 hover:text-white transition-colors"
+                >
+                  Copy ↗
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* FAB toggle button */}
+        <button
+          onClick={() => setCalcOpen(v => !v)}
+          title="Calculator"
+          className={`w-14 h-14 rounded-full shadow-xl flex items-center justify-center transition-all duration-200 ${
+            calcOpen
+              ? 'bg-gray-800 text-white'
+              : 'bg-primary-600 text-white hover:bg-primary-700 hover:scale-110'
+          }`}
+        >
+          <Calculator className="w-6 h-6" />
+        </button>
+      </div>
 
       {/* ══ Borrower History Modal ════════════════════════════════════════════ */}
       <Modal isOpen={historyModal.open} onClose={() => setHistoryModal(p => ({...p, open: false}))} title={`Payment History — ${historyModal.borrower?.name}`} size="xl">
