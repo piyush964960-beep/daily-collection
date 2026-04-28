@@ -172,10 +172,11 @@ const getBorrowerTable = async (req, res) => {
         isDueToday,
         nextPaymentDate,
         currentInstallment,
-        // Days elapsed since loan disbursement (start date)
+        // Days elapsed since loan disbursement (start date).
+        // Day 1 = the start date itself, Day 2 = next day, etc.
         daysSinceStart: loan.startDate
-          ? Math.max(0, Math.floor((today - new Date(new Date(loan.startDate).setHours(0,0,0,0))) / 86400000))
-          : 0,
+          ? Math.max(1, Math.floor((today - new Date(new Date(loan.startDate).setHours(0,0,0,0))) / 86400000) + 1)
+          : 1,
         totalPaid,
         dailyInterestAmount,
         dailyPrincipalAmount,
