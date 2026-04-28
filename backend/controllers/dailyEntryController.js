@@ -89,10 +89,48 @@ const getBorrowerTable = async (req, res) => {
     const entryMap = {};
     todayEntries.forEach(e => { entryMap[e.loan.toString()] = e; });
 
+    const today = new Date(startOfDay);
+
     const tableData = loans.map(loan => {
       const hasNewModel = loan.totalInterest > 0 && loan.duration > 0;
+      const emiFrequency = loan.emiFrequency || 1;
+      const isPeriodic   = emiFrequency > 1;
 
-      // ── Per-day amounts ──────────────────────────────────────────────────
+      // ── Periodic EMI: check if today is a payment day ───────────────────
+      let isDueToday     = true;
+      let nextPaymentDate = null;
+      let currentInstallment = null;
+
+      if (isPeriodic && loan.startDate) {
+        const startDate = new Date(loan.startDate);
+        startDate.setHours(0, 0, 0, 0);
+        const daysSinceStart = Math.floor((today - startDate) / 86400000);
+
+        if (daysSinceStart < 0) {
+          isDueToday = false; // loan not started yet
+        } else {
+          const remainder = daysSinceStart % emiFrequency;
+          isDueToday = remainder === 0;
+
+          if (!isDueToday) {
+            // next payment day
+            const daysUntilNext = emiFrequency - remainder;
+            const next = new Date(today);
+            next.setDate(next.getDate() + daysUntilNext);
+            nextPaymentDate = next.toISOString().split('T')[0];
+          }
+        }
+        // Which installment number is today?
+        const daysSinceStartSafe = Math.max(0, Math.floor((today - startDate) / 86400000));
+        currentInstallment = Math.floor(daysSinceStartSafe / emiFrequency) + 1;
+      }
+
+      const todayEntry = entryMap[loan._id.toString()] || null;
+
+      // Skip periodic loans that aren't due today (unless already paid — show for reference)
+      if (isPeriodic && !isDueToday && !todayEntry) return null;
+
+      // ── Per-installment amounts ──────────────────────────────────────────
       const dailyInterestAmount = hasNewModel
         ? parseFloat((loan.totalInterest  / loan.duration).toFixed(2))
         : parseFloat(((loan.remainingPrincipal * (loan.interestRate || 0) / 100) / 30).toFixed(2));
@@ -115,6 +153,7 @@ const getBorrowerTable = async (req, res) => {
           _id:               loan._id,
           loanId:            loan.loanId,
           loanType:          loan.loanType,
+          emiFrequency,
           principalAmount:   loan.principalAmount,
           totalInterest:     loan.totalInterest  || 0,
           totalLoanAmount:   loan.principalAmount + (loan.totalInterest || 0),
@@ -125,15 +164,26 @@ const getBorrowerTable = async (req, res) => {
           interestRate:       loan.interestRate || 0,
           duration:           loan.duration,
           collectionPoint:    loan.collectionPoint,
+          startDate:          loan.startDate,
           completionDate:     loan.completionDate
         },
+        emiFrequency,
+        isPeriodic,
+        isDueToday,
+        nextPaymentDate,
+        currentInstallment,
+        // Days elapsed since loan disbursement (start date)
+        daysSinceStart: loan.startDate
+          ? Math.max(0, Math.floor((today - new Date(new Date(loan.startDate).setHours(0,0,0,0))) / 86400000))
+          : 0,
+        totalPaid,
         dailyInterestAmount,
         dailyPrincipalAmount,
         dailyAmount,
         remainingAmount,
-        todayEntry: entryMap[loan._id.toString()] || null
+        todayEntry
       };
-    });
+    }).filter(Boolean); // remove nulls (periodic loans not due today)
 
     res.json({ success: true, data: tableData, date: dateStr });
   } catch (err) {

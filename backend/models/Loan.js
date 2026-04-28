@@ -70,7 +70,13 @@ const loanSchema = new mongoose.Schema({
     type: Number,
     required: [true, 'Duration is required'],
     min: [1, 'Duration must be at least 1']
-    // For Daily loans: number of days; For Monthly loans: number of months
+    // Number of installments. Total days = duration × emiFrequency
+  },
+  // Days between installments: 1=daily, 5=every-5-days, 7=weekly, 10=every-10-days, etc.
+  emiFrequency: {
+    type: Number,
+    default: 1,
+    min: [1, 'EMI frequency must be at least 1 day']
   },
   collectionPoint: {
     type: String,
@@ -115,10 +121,11 @@ loanSchema.pre('save', async function(next) {
   if (this.isNew) {
     this.remainingPrincipal = this.principalAmount;
   }
-  // For Daily loans: completion = startDate + duration days
+  // For Daily loans: completion = startDate + (duration × emiFrequency) days
   if (this.loanType === 'Daily' && this.startDate) {
     const d = new Date(this.startDate);
-    d.setDate(d.getDate() + (this.duration || 100));
+    const freq = this.emiFrequency || 1;
+    d.setDate(d.getDate() + ((this.duration || 100) * freq));
     this.completionDate = d;
   } else {
     this.completionDate = undefined;

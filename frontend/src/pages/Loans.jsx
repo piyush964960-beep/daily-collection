@@ -44,6 +44,29 @@ Thank you! 🙏`
   window.open(`https://wa.me/${fmtPhone(phone)}?text=${encodeURIComponent(msg)}`, '_blank')
 }
 
+// ── EMI Frequency helpers ─────────────────────────────────────────────────────
+const FREQ_OPTIONS = [
+  { value: 1,  label: 'Daily',      short: 'Daily' },
+  { value: 5,  label: 'Every 5 Days', short: '5-Day' },
+  { value: 7,  label: 'Weekly',     short: 'Weekly' },
+  { value: 10, label: 'Every 10 Days', short: '10-Day' },
+  { value: 15, label: 'Every 15 Days', short: '15-Day' },
+  { value: 30, label: 'Monthly',    short: 'Monthly' },
+]
+
+const freqLabel = (freq) => {
+  if (!freq || freq === 1) return null
+  const opt = FREQ_OPTIONS.find(o => o.value === freq)
+  return opt ? opt.short : `Every ${freq} Days`
+}
+
+const freqBadgeClass = (freq) => {
+  if (!freq || freq === 1) return ''
+  if (freq === 7)  return 'bg-purple-100 text-purple-700'
+  if (freq === 30) return 'bg-yellow-100 text-yellow-700'
+  return 'bg-indigo-100 text-indigo-700'
+}
+
 const EMPTY_FORM = {
   borrower:        '',
   principalAmount: '',
@@ -53,6 +76,7 @@ const EMPTY_FORM = {
   disbursements:   [{ mode: 'Cash', amount: '', accountName: '' }],
   startDate:       new Date().toISOString().split('T')[0],
   duration:        '',
+  emiFrequency:    1,
   loanType:        'Daily',
   collectionPoint: '',
   isDefault:       false,
@@ -64,7 +88,7 @@ export default function Loans() {
   const [loans, setLoans]             = useState([])
   const [borrowers, setBorrowers]     = useState([])
   const [loading, setLoading]         = useState(true)
-  const [loanTypeFilter, setLoanTypeFilter] = useState('')
+  const [activeFilter, setActiveFilter]     = useState('all') // 'all'|'daily'|'periodic'|'monthly'|'overdue'
   const [overdueFilter, setOverdueFilter]   = useState(false)
   const [sortBy, setSortBy]           = useState('')
   const [search, setSearch]           = useState('')
@@ -77,22 +101,22 @@ export default function Loans() {
   const fetchLoans = useCallback(async (page = 1) => {
     setLoading(true)
     try {
-      const res = await api.get('/loans', {
-        params: {
-          status: '',
-          loanType: overdueFilter ? '' : loanTypeFilter,
-          sortBy,
-          search,
-          page,
-          limit: 15,
-          overdue: overdueFilter ? 'true' : ''
-        }
-      })
+      const params = { sortBy, search, page, limit: 15 }
+      if (activeFilter === 'overdue') {
+        params.overdue = 'true'
+      } else if (activeFilter === 'monthly') {
+        params.loanType = 'Monthly'
+      } else if (activeFilter === 'daily') {
+        params.loanType = 'Daily'; params.freqFilter = 'daily'
+      } else if (activeFilter === 'periodic') {
+        params.loanType = 'Daily'; params.freqFilter = 'periodic'
+      }
+      const res = await api.get('/loans', { params })
       setLoans(res.data.data)
       setPagination(res.data.pagination)
     } catch { toast.error('Failed to load loans') }
     finally { setLoading(false) }
-  }, [loanTypeFilter, overdueFilter, sortBy, search])
+  }, [activeFilter, sortBy, search])
 
   useEffect(() => { fetchLoans() }, [fetchLoans])
 
@@ -163,8 +187,10 @@ export default function Loans() {
   const previewDailyTotal     = dur > 0 && tla > 0 ? fmtn(tla / dur)   : null
   const previewDailyInterest  = dur > 0 && ti  > 0 ? fmtn(ti  / dur)   : null
   const previewDailyPrincipal = dur > 0 && pa  > 0 ? fmtn(pa  / dur)   : null
+  const freq = parseInt(form.emiFrequency) || 1
+  const totalDays = dur * freq
   const previewCompletionDate = form.loanType === 'Daily' && form.startDate && dur > 0
-    ? new Date(new Date(form.startDate).getTime() + dur * 86400000).toLocaleDateString('en-IN')
+    ? new Date(new Date(form.startDate).getTime() + totalDays * 86400000).toLocaleDateString('en-IN')
     : null
 
   // ── Submit ───────────────────────────────────────────────────────────────────
@@ -178,6 +204,7 @@ export default function Loans() {
           totalInterest:   form.totalInterest  !== '' ? parseFloat(form.totalInterest)  : undefined,
           interestRate:    form.interestRate   !== '' ? parseFloat(form.interestRate)   : undefined,
           duration:        form.duration,
+          emiFrequency:    form.emiFrequency   || 1,
           startDate:       form.startDate      || undefined,
           status:          form.status,
           loanType:        form.loanType,
@@ -213,10 +240,11 @@ export default function Loans() {
       principalAmount: loanPA,
       totalInterest:   loanTI,
       totalLoanAmount: loanPA + loanTI,
-      interestRate:  loan.interestRate || '',
-      disbursements: [{ mode: 'Cash', amount: '', accountName: '' }],
-      startDate:       loan.startDate?.split('T')[0] || '',
+      interestRate:    loan.interestRate || '',
+      disbursements:   [{ mode: 'Cash', amount: '', accountName: '' }],
+      startDate:       loan.startDate ? new Date(loan.startDate).toISOString().split('T')[0] : '',
       duration:        loan.duration,
+      emiFrequency:    loan.emiFrequency || 1,
       loanType:        loan.loanType || 'Daily',
       collectionPoint: loan.collectionPoint || '',
       isDefault:       loan.isDefault || false,
@@ -264,12 +292,17 @@ export default function Loans() {
 
         <div className="flex flex-col sm:flex-row flex-wrap gap-2 items-start sm:items-center">
           <div className="flex flex-wrap gap-1 bg-gray-100 rounded-lg p-1">
-            {[['', 'All'], ['Daily', 'Daily'], ['Monthly', 'Monthly']].map(([val, label]) => (
+            {[
+              { val: 'all',      label: 'All' },
+              { val: 'daily',    label: 'Daily EMI' },
+              { val: 'periodic', label: 'Periodic EMI' },
+              { val: 'monthly',  label: 'Monthly' },
+            ].map(({ val, label }) => (
               <button
                 key={val}
-                onClick={() => { setLoanTypeFilter(val); setOverdueFilter(false) }}
+                onClick={() => setActiveFilter(val)}
                 className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
-                  !overdueFilter && loanTypeFilter === val
+                  activeFilter === val
                     ? 'bg-white text-primary-700 shadow-sm'
                     : 'text-gray-500 hover:text-gray-700'
                 }`}
@@ -278,9 +311,9 @@ export default function Loans() {
               </button>
             ))}
             <button
-              onClick={() => { setOverdueFilter(v => !v); setLoanTypeFilter('') }}
+              onClick={() => setActiveFilter(f => f === 'overdue' ? 'all' : 'overdue')}
               className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-1.5 ${
-                overdueFilter
+                activeFilter === 'overdue'
                   ? 'bg-red-500 text-white shadow-sm'
                   : 'text-red-500 hover:text-red-700 hover:bg-red-50'
               }`}
@@ -300,7 +333,8 @@ export default function Loans() {
             <option value="isDefault">Defaults First</option>
           </select>
           <span className="text-sm text-gray-500 sm:ml-auto">
-            {overdueFilter && <span className="text-red-500 font-medium mr-1">Overdue:</span>}
+            {activeFilter === 'overdue' && <span className="text-red-500 font-medium mr-1">Overdue:</span>}
+            {activeFilter === 'periodic' && <span className="text-indigo-500 font-medium mr-1">Periodic EMI:</span>}
             {pagination.total} loans
           </span>
         </div>
@@ -403,7 +437,7 @@ export default function Loans() {
               </div>
             )}
 
-            {/* Collection point + Type */}
+            {/* Collection point + Type + Frequency */}
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500 mb-3">
               {l.collectionPoint && (
                 <div className="flex items-center gap-1">
@@ -411,6 +445,11 @@ export default function Loans() {
                 </div>
               )}
               <span className={l.loanType === 'Daily' ? 'badge-blue' : 'badge-yellow'}>{l.loanType || 'Daily'}</span>
+              {freqLabel(l.emiFrequency) && (
+                <span className={`badge text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${freqBadgeClass(l.emiFrequency)}`}>
+                  {freqLabel(l.emiFrequency)}
+                </span>
+              )}
             </div>
 
             {/* Action buttons */}
@@ -473,9 +512,16 @@ export default function Loans() {
                   </td>
                   <td className="px-4 py-3 font-medium text-gray-900">{l.borrower?.name}</td>
                   <td className="px-4 py-3">
-                    <span className={l.loanType === 'Daily' ? 'badge-blue' : 'badge-yellow'}>
-                      {l.loanType || 'Daily'}
-                    </span>
+                    <div className="flex flex-col gap-1">
+                      <span className={l.loanType === 'Daily' ? 'badge-blue' : 'badge-yellow'}>
+                        {l.loanType || 'Daily'}
+                      </span>
+                      {freqLabel(l.emiFrequency) && (
+                        <span className={`badge text-[10px] px-1.5 py-0.5 rounded-full font-semibold w-fit ${freqBadgeClass(l.emiFrequency)}`}>
+                          {freqLabel(l.emiFrequency)}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   {/* Daily Payment column */}
                   <td className="px-4 py-3">
@@ -770,7 +816,11 @@ export default function Loans() {
               />
             </div>
             <div>
-              <label className="label">{form.loanType === 'Daily' ? 'Duration (days)' : 'Duration (months)'}</label>
+              <label className="label">
+                {form.loanType === 'Daily'
+                  ? `No. of Installments${form.emiFrequency > 1 ? ` (× ${form.emiFrequency} days each)` : ''}`
+                  : 'Duration (months)'}
+              </label>
               <input
                 type="number" className="input" placeholder={form.loanType === 'Daily' ? '100' : '12'} min="1"
                 value={form.duration}
@@ -779,6 +829,34 @@ export default function Loans() {
               />
             </div>
           </div>
+
+          {/* EMI Frequency — Daily loans only */}
+          {form.loanType === 'Daily' && (
+            <div>
+              <label className="label">EMI Frequency</label>
+              <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                {FREQ_OPTIONS.map(opt => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setForm(p => ({ ...p, emiFrequency: opt.value }))}
+                    className={`px-2 py-2 rounded-lg text-xs font-medium border-2 transition-colors ${
+                      form.emiFrequency === opt.value
+                        ? 'border-primary-600 bg-primary-50 text-primary-700'
+                        : 'border-gray-200 hover:border-gray-300 text-gray-600'
+                    }`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {form.emiFrequency > 1 && form.duration && (
+                <p className="text-xs text-indigo-600 mt-1.5 bg-indigo-50 rounded px-2 py-1">
+                  {form.duration} installments × {form.emiFrequency} days = <strong>{form.duration * form.emiFrequency} total days</strong>
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Edit-mode legacy interestRate (shown only if loan has it) */}
           {editLoan && (editLoan.interestRate > 0) && (
@@ -835,9 +913,11 @@ export default function Loans() {
               <p className="text-xs text-blue-600 mt-1">
                 New completion date:{' '}
                 <strong>
-                  {new Date(new Date(form.startDate).getTime() + parseFloat(form.duration) * 86400000).toLocaleDateString('en-IN')}
+                  {new Date(new Date(form.startDate).getTime() + parseFloat(form.duration) * (form.emiFrequency || 1) * 86400000).toLocaleDateString('en-IN')}
                 </strong>
-                {' '}({form.duration} days)
+                {form.emiFrequency > 1
+                  ? ` (${form.duration} × ${form.emiFrequency} = ${form.duration * form.emiFrequency} days)`
+                  : ` (${form.duration} days)`}
               </p>
             )}
           </div>
@@ -845,7 +925,10 @@ export default function Loans() {
           {/* Completion date preview (create only) */}
           {previewCompletionDate && !editLoan && (
             <div className="bg-blue-50 rounded-lg p-3 text-xs text-blue-700">
-              Completion date: <strong>{previewCompletionDate}</strong> ({dur} days from start)
+              Completion date: <strong>{previewCompletionDate}</strong>
+              {freq > 1
+                ? ` (${dur} installments × ${freq} days = ${totalDays} days)`
+                : ` (${dur} days from start)`}
             </div>
           )}
 

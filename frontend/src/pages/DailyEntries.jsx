@@ -57,8 +57,9 @@ export default function DailyEntries() {
   const [rowPayments,   setRowPayments]   = useState({})   // loanId → [{mode, amount, accountName}]
   const [savingRow,     setSavingRow]     = useState({})   // loanId → bool
 
-  // ── Sort ─────────────────────────────────────────────────────────────────
-  const [sortEntries, setSortEntries] = useState('')
+  // ── Sort + collector filter (Collection tab) ─────────────────────────────
+  const [sortEntries, setSortEntries] = useState('completion_asc')
+  const [collectionCollectorFilter, setCollectionCollectorFilter] = useState('')
 
   // ── WhatsApp dropdown (loanId of open menu, or null) ─────────────────────
   const [waMenu, setWaMenu] = useState(null)
@@ -308,43 +309,94 @@ Thank you! 🙏`
 
   useEffect(() => { if (activeTab === 'history') fetchHistory() }, [activeTab, fetchHistory])
 
-  // ── Sorted borrower table ────────────────────────────────────────────────
+  // ── Sorted + grouped borrower table ──────────────────────────────────────
+  // Always groups same-borrower loans together. Sort option controls group order.
   const sortedBorrowerTable = useMemo(() => {
-    if (!sortEntries) return borrowerTable
-    const arr = [...borrowerTable]
+    // 1. Collector filter
+    let arr = collectionCollectorFilter
+      ? borrowerTable.filter(r =>
+          r.borrower.assignedCollector?._id === collectionCollectorFilter ||
+          r.borrower.assignedCollector === collectionCollectorFilter
+        )
+      : [...borrowerTable]
+
+    // 2. Group by borrower._id so multiple loans of same borrower stay together
+    const groupMap = new Map()
+    arr.forEach(row => {
+      const bid = row.borrower._id
+      if (!groupMap.has(bid)) groupMap.set(bid, [])
+      groupMap.get(bid).push(row)
+    })
+
+    // 3. Within each group, always sort by completion date asc
+    groupMap.forEach(rows => {
+      rows.sort((a, b) => {
+        const da = a.loan.completionDate ? new Date(a.loan.completionDate) : new Date('9999-12-31')
+        const db = b.loan.completionDate ? new Date(b.loan.completionDate) : new Date('9999-12-31')
+        return da - db
+      })
+    })
+
+    // 4. Helper: representative value of a group for inter-group sorting
+    const rep = (rows) => rows[0]
+    const minCompletion = (rows) => rows.reduce((min, r) => {
+      const d = r.loan.completionDate ? new Date(r.loan.completionDate) : new Date('9999-12-31')
+      return d < min ? d : min
+    }, new Date('9999-12-31'))
+
+    // 5. Sort the groups
+    const groups = [...groupMap.values()]
     switch (sortEntries) {
+      case 'completion_asc':
+        groups.sort((a, b) => minCompletion(a) - minCompletion(b))
+        break
+      case 'completion_desc':
+        groups.sort((a, b) => minCompletion(b) - minCompletion(a))
+        break
       case 'name_asc':
-        return arr.sort((a, b) => a.borrower.name.localeCompare(b.borrower.name))
+        groups.sort((a, b) => rep(a).borrower.name.localeCompare(rep(b).borrower.name))
+        break
       case 'name_desc':
-        return arr.sort((a, b) => b.borrower.name.localeCompare(a.borrower.name))
+        groups.sort((a, b) => rep(b).borrower.name.localeCompare(rep(a).borrower.name))
+        break
       case 'collector_asc':
-        return arr.sort((a, b) => {
-          const ca = a.borrower.assignedCollector?.name || ''
-          const cb = b.borrower.assignedCollector?.name || ''
-          return ca.localeCompare(cb) || a.borrower.name.localeCompare(b.borrower.name)
+        groups.sort((a, b) => {
+          const ca = rep(a).borrower.assignedCollector?.name || ''
+          const cb = rep(b).borrower.assignedCollector?.name || ''
+          return ca.localeCompare(cb) || rep(a).borrower.name.localeCompare(rep(b).borrower.name)
         })
+        break
       case 'collector_desc':
-        return arr.sort((a, b) => {
-          const ca = a.borrower.assignedCollector?.name || ''
-          const cb = b.borrower.assignedCollector?.name || ''
-          return cb.localeCompare(ca) || a.borrower.name.localeCompare(b.borrower.name)
+        groups.sort((a, b) => {
+          const ca = rep(a).borrower.assignedCollector?.name || ''
+          const cb = rep(b).borrower.assignedCollector?.name || ''
+          return cb.localeCompare(ca) || rep(a).borrower.name.localeCompare(rep(b).borrower.name)
         })
+        break
       case 'pending_first':
-        return arr.sort((a, b) => {
-          if (!a.todayEntry && b.todayEntry) return -1
-          if (a.todayEntry && !b.todayEntry) return 1
-          return a.borrower.name.localeCompare(b.borrower.name)
+        groups.sort((a, b) => {
+          const aPending = a.some(r => !r.todayEntry)
+          const bPending = b.some(r => !r.todayEntry)
+          if (aPending && !bPending) return -1
+          if (!aPending && bPending) return 1
+          return rep(a).borrower.name.localeCompare(rep(b).borrower.name)
         })
+        break
       case 'paid_first':
-        return arr.sort((a, b) => {
-          if (a.todayEntry && !b.todayEntry) return -1
-          if (!a.todayEntry && b.todayEntry) return 1
-          return a.borrower.name.localeCompare(b.borrower.name)
+        groups.sort((a, b) => {
+          const aAllPaid = a.every(r => r.todayEntry)
+          const bAllPaid = b.every(r => r.todayEntry)
+          if (aAllPaid && !bAllPaid) return -1
+          if (!aAllPaid && bAllPaid) return 1
+          return rep(a).borrower.name.localeCompare(rep(b).borrower.name)
         })
+        break
       default:
-        return arr
+        groups.sort((a, b) => minCompletion(a) - minCompletion(b))
     }
-  }, [borrowerTable, sortEntries])
+
+    return groups.flat()
+  }, [borrowerTable, sortEntries, collectionCollectorFilter])
 
   // ── Day-level running totals (paid + in-progress individual entries) ──────
   const dayAgg = useMemo(() => {
@@ -373,9 +425,9 @@ Thank you! 🙏`
     return acc
   }, [borrowerTable, rowPayments])
 
-  // ── Counts ────────────────────────────────────────────────────────────────
-  const pendingCount = borrowerTable.filter(r => !r.todayEntry).length
-  const paidCount    = borrowerTable.filter(r =>  r.todayEntry).length
+  // ── Counts (from filtered+sorted table, so they respect collector filter) ──
+  const pendingCount = sortedBorrowerTable.filter(r => !r.todayEntry).length
+  const paidCount    = sortedBorrowerTable.filter(r =>  r.todayEntry).length
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -424,8 +476,21 @@ Thank you! 🙏`
               </div>
             </div>
 
-            {/* Sort + Counts + View Report */}
+            {/* Sort + Collector Filter + Counts + View Report */}
             <div className="flex flex-wrap gap-2 items-center sm:ml-auto">
+              {/* Collector filter (admin only) */}
+              {isAdmin && collectorsList.length > 0 && (
+                <select
+                  className="input w-auto text-xs py-1.5"
+                  value={collectionCollectorFilter}
+                  onChange={e => setCollectionCollectorFilter(e.target.value)}
+                >
+                  <option value="">All Collectors</option>
+                  {collectorsList.map(c => (
+                    <option key={c._id} value={c._id}>{c.name}</option>
+                  ))}
+                </select>
+              )}
               <div className="flex items-center gap-1.5">
                 <ArrowUpDown className="w-3.5 h-3.5 text-gray-400" />
                 <select
@@ -433,7 +498,8 @@ Thank you! 🙏`
                   value={sortEntries}
                   onChange={e => setSortEntries(e.target.value)}
                 >
-                  <option value="">Sort: Default</option>
+                  <option value="completion_asc">Due Date ↑</option>
+                  <option value="completion_desc">Due Date ↓</option>
                   <option value="name_asc">Name A → Z</option>
                   <option value="name_desc">Name Z → A</option>
                   <option value="collector_asc">Collector A → Z</option>
@@ -488,7 +554,7 @@ Thank you! 🙏`
                 <div className="text-center py-16 text-gray-400">No active loans found</div>
               ) : (
                 <div className="divide-y divide-gray-100">
-                  {sortedBorrowerTable.map((row) => {
+                  {sortedBorrowerTable.map((row, idx) => {
                     const loanId     = row.loan._id
                     const isExpanded = expandedRows[loanId]
                     const payments   = rowPayments[loanId] || [emptyPayment()]
@@ -496,31 +562,85 @@ Thank you! 🙏`
                     const split      = calcSplit(row.dailyInterestAmount, row.dailyPrincipalAmount, row.loan.remainingPrincipal, total)
                     const isPaid     = !!row.todayEntry
 
+                    // Multi-loan grouping indicators
+                    const prevSameBorrower = idx > 0 && sortedBorrowerTable[idx - 1].borrower._id === row.borrower._id
+                    const nextSameBorrower = idx < sortedBorrowerTable.length - 1 && sortedBorrowerTable[idx + 1].borrower._id === row.borrower._id
+                    const isGrouped = prevSameBorrower || nextSameBorrower
+
                     return (
-                      <div key={loanId} className={isPaid ? 'bg-green-50/40' : 'bg-white'}>
+                      <div key={loanId} className={`${isPaid ? 'bg-green-50/40' : 'bg-white'} ${isGrouped ? 'border-l-2 border-l-primary-300' : ''}`}>
                         {/* Row Header */}
                         <div className="px-4 py-3">
                           {/* Top part: avatar + name + action buttons */}
                           <div className="flex items-start gap-3">
-                            <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold mt-0.5 ${isPaid ? 'bg-green-500 text-white' : 'bg-primary-100 text-primary-700'}`}>
-                              {isPaid ? <CheckCircle2 className="w-4 h-4" /> : row.borrower.name.charAt(0).toUpperCase()}
-                            </div>
+                            {prevSameBorrower ? (
+                              /* Continuation row: smaller connector dot instead of avatar */
+                              <div className="w-8 h-8 flex-shrink-0 flex items-center justify-center mt-0.5">
+                                <div className="w-2 h-2 rounded-full bg-primary-300" />
+                              </div>
+                            ) : (
+                              <div className={`w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold mt-0.5 ${isPaid ? 'bg-green-500 text-white' : 'bg-primary-100 text-primary-700'}`}>
+                                {isPaid ? <CheckCircle2 className="w-4 h-4" /> : row.borrower.name.charAt(0).toUpperCase()}
+                              </div>
+                            )}
                             <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-sm text-gray-900">{row.borrower.name}</p>
+                              {/* Only show borrower name on first loan in a group */}
+                              {!prevSameBorrower && (
+                                <p className="font-semibold text-sm text-gray-900">{row.borrower.name}</p>
+                              )}
+                              {prevSameBorrower && (() => {
+                                // Count how many loans this borrower has before this index
+                                let loanNum = 2
+                                for (let i = idx - 1; i >= 0 && sortedBorrowerTable[i].borrower._id === row.borrower._id; i--) loanNum++
+                                return (
+                                  <p className="text-xs text-primary-500 font-medium mb-0.5">
+                                    ↳ {row.borrower.name} — Loan #{loanNum}
+                                  </p>
+                                )
+                              })()}
                               {row.loan.collectionPoint && <p className="text-xs text-gray-400">{row.loan.collectionPoint}</p>}
                               {/* Loan info: shown below name on mobile */}
                               <div className="flex flex-wrap items-center gap-2 mt-1 text-xs text-gray-500">
                                 <span className="font-mono bg-gray-100 px-2 py-0.5 rounded">{row.loan.loanId}</span>
                                 <span className={row.loan.loanType === 'Daily' ? 'badge-blue' : 'badge-yellow'}>{row.loan.loanType}</span>
+                                {row.isPeriodic && (
+                                  <span className="badge text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-indigo-100 text-indigo-700">
+                                    {row.emiFrequency === 7 ? 'Weekly' : `Every ${row.emiFrequency} Days`}
+                                  </span>
+                                )}
+                                {row.isPeriodic && row.currentInstallment && (
+                                  <span className="text-indigo-500 font-medium">
+                                    #{row.currentInstallment}/{row.loan.duration}
+                                  </span>
+                                )}
                                 <span>Rem: <strong className="text-blue-700">{fmt(row.remainingAmount)}</strong></span>
                                 {row.dailyPrincipalAmount > 0 ? (
-                                  <span>Daily: <strong className="text-gray-700">{fmt(row.dailyAmount)}</strong>
+                                  <span>{row.isPeriodic ? 'EMI' : 'Daily'}: <strong className="text-gray-700">{fmt(row.dailyAmount)}</strong>
                                     <span className="text-gray-400 ml-1 hidden sm:inline">(Int {fmt(row.dailyInterestAmount)} + Prin {fmt(row.dailyPrincipalAmount)})</span>
                                   </span>
                                 ) : (
-                                  <span>Int/day: <strong className="text-orange-600">{fmt(row.dailyInterestAmount)}</strong></span>
+                                  <span>Int/{row.isPeriodic ? 'EMI' : 'day'}: <strong className="text-orange-600">{fmt(row.dailyInterestAmount)}</strong></span>
                                 )}
                               </div>
+                              {/* ── 3 stat chips: start date · days elapsed · days collected ── */}
+                              {row.loan.startDate && (
+                                <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                                  {/* Start date */}
+                                  <span className="inline-flex items-center gap-1 bg-gray-50 border border-gray-200 text-gray-600 text-[11px] px-2 py-0.5 rounded-full">
+                                    📅 {new Date(row.loan.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
+                                  </span>
+                                  {/* Days elapsed since disbursement */}
+                                  <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-700 text-[11px] px-2 py-0.5 rounded-full font-medium">
+                                    ⏱ Day {row.daysSinceStart}
+                                  </span>
+                                  {/* Days worth collected = totalPaid / dailyAmount */}
+                                  {row.dailyAmount > 0 && (
+                                    <span className="inline-flex items-center gap-1 bg-green-50 border border-green-200 text-green-700 text-[11px] px-2 py-0.5 rounded-full font-medium">
+                                      ✅ {Math.floor(row.totalPaid / row.dailyAmount)}/{row.loan.duration} {row.isPeriodic ? 'EMIs' : 'days'} paid
+                                    </span>
+                                  )}
+                                </div>
+                              )}
                             </div>
                             <div className="flex items-center gap-1 flex-shrink-0">
                               {!isPaid && (
@@ -712,27 +832,38 @@ Thank you! 🙏`
                         <h3 className="text-sm font-semibold text-gray-700">Pending Payments ({pendingCount})</h3>
                       </div>
                       <div className="divide-y divide-gray-100">
-                        {sortedBorrowerTable.filter(r => !r.todayEntry).map(row => {
+                        {sortedBorrowerTable.filter(r => !r.todayEntry).map((row, idx, arr) => {
                           const loanId    = row.loan._id
                           const pmts      = bulkInputs[loanId] || [emptyPayment()]
                           const bulkTotal = getBulkTotal(loanId)
                           const split     = calcSplit(row.dailyInterestAmount, row.dailyPrincipalAmount, row.loan.remainingPrincipal, bulkTotal)
+                          const prevSameBulk = idx > 0 && arr[idx - 1].borrower._id === row.borrower._id
 
                           return (
-                            <div key={loanId} className="px-4 py-3 space-y-2">
+                            <div key={loanId} className={`px-4 py-3 space-y-2 ${prevSameBulk ? 'border-l-2 border-l-primary-300 bg-primary-50/20' : ''}`}>
                               {/* Borrower header row */}
                               <div className="flex flex-col sm:flex-row sm:flex-wrap items-start gap-2 sm:gap-3">
                                 {/* Name + loan info */}
                                 <div className="min-w-0 flex-1">
-                                  <p className="font-semibold text-sm text-gray-900">{row.borrower.name}</p>
+                                  {prevSameBulk ? (() => {
+                                    let loanNum = 2
+                                    for (let i = idx - 1; i >= 0 && arr[i].borrower._id === row.borrower._id; i--) loanNum++
+                                    return <p className="text-xs text-primary-500 font-medium mb-0.5">↳ {row.borrower.name} — Loan #{loanNum}</p>
+                                  })() : <p className="font-semibold text-sm text-gray-900">{row.borrower.name}</p>}
                                   <div className="flex flex-wrap items-center gap-1.5 mt-0.5">
                                     <span className="font-mono text-[11px] bg-gray-100 px-1.5 py-0.5 rounded">{row.loan.loanId}</span>
                                     {row.loan.collectionPoint && <span className="text-[11px] text-gray-400">{row.loan.collectionPoint}</span>}
+                                    {row.isPeriodic && (
+                                      <span className="badge text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-indigo-100 text-indigo-700">
+                                        {row.emiFrequency === 7 ? 'Weekly' : `Every ${row.emiFrequency} Days`}
+                                        {row.currentInstallment && <span className="ml-1 opacity-75">#{row.currentInstallment}/{row.loan.duration}</span>}
+                                      </span>
+                                    )}
                                     <span className="text-xs text-gray-500">Rem: <strong className="text-blue-700">{fmt(row.remainingAmount)}</strong></span>
                                     {row.dailyPrincipalAmount > 0 ? (
-                                      <span className="text-xs text-gray-500">Daily: <strong className="text-gray-700">{fmt(row.dailyAmount)}</strong></span>
+                                      <span className="text-xs text-gray-500">{row.isPeriodic ? 'EMI' : 'Daily'}: <strong className="text-gray-700">{fmt(row.dailyAmount)}</strong></span>
                                     ) : (
-                                      <span className="text-xs text-gray-500">Int/day: <strong className="text-orange-600">{fmt(row.dailyInterestAmount)}</strong></span>
+                                      <span className="text-xs text-gray-500">Int/{row.isPeriodic ? 'EMI' : 'day'}: <strong className="text-orange-600">{fmt(row.dailyInterestAmount)}</strong></span>
                                     )}
                                   </div>
                                 </div>
@@ -746,6 +877,23 @@ Thank you! 🙏`
                                   </div>
                                 )}
                               </div>
+
+                              {/* ── stat chips: start date · days elapsed · days collected ── */}
+                              {row.loan.startDate && (
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className="inline-flex items-center gap-1 bg-gray-50 border border-gray-200 text-gray-600 text-[11px] px-2 py-0.5 rounded-full">
+                                    📅 {new Date(row.loan.startDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' })}
+                                  </span>
+                                  <span className="inline-flex items-center gap-1 bg-amber-50 border border-amber-200 text-amber-700 text-[11px] px-2 py-0.5 rounded-full font-medium">
+                                    ⏱ Day {row.daysSinceStart}
+                                  </span>
+                                  {row.dailyAmount > 0 && (
+                                    <span className="inline-flex items-center gap-1 bg-green-50 border border-green-200 text-green-700 text-[11px] px-2 py-0.5 rounded-full font-medium">
+                                      ✅ {Math.floor(row.totalPaid / row.dailyAmount)}/{row.loan.duration} {row.isPeriodic ? 'EMIs' : 'days'} paid
+                                    </span>
+                                  )}
+                                </div>
+                              )}
 
                               {/* Payment lines */}
                               <div className="space-y-2 pl-2 border-l-2 border-gray-100">

@@ -54,7 +54,7 @@ const withInterest = (loan) => {
 // @GET /api/loans
 const getLoans = async (req, res) => {
   try {
-    const { borrowerId, status, loanType, sortBy, search, overdue, page = 1, limit = 20 } = req.query;
+    const { borrowerId, status, loanType, sortBy, search, overdue, freqFilter, page = 1, limit = 20 } = req.query;
     const query = {};
 
     if (overdue === 'true') {
@@ -65,6 +65,13 @@ const getLoans = async (req, res) => {
     } else {
       if (status) query.status = status;
       if (loanType) query.loanType = loanType;
+    }
+
+    // Frequency filter: 'daily' = emiFrequency 1 or unset, 'periodic' = emiFrequency > 1
+    if (freqFilter === 'daily') {
+      query.$or = [{ emiFrequency: 1 }, { emiFrequency: { $exists: false } }];
+    } else if (freqFilter === 'periodic') {
+      query.emiFrequency = { $gt: 1 };
     }
 
     // Search by borrower name
@@ -125,7 +132,7 @@ const createLoan = async (req, res) => {
   try {
     const {
       borrower, principalAmount, interestRate, totalInterest, startDate,
-      duration, loanType, collectionPoint, isDefault,
+      duration, emiFrequency, loanType, collectionPoint, isDefault,
       disbursementMode,   // legacy single-mode (backward compat)
       disbursements,      // new multi-account array [{ mode, amount, accountName }]
       notes
@@ -162,6 +169,7 @@ const createLoan = async (req, res) => {
       totalInterest:    totalInterest    || 0,
       startDate:        startDate        || new Date(),
       duration,
+      emiFrequency:     emiFrequency     ? parseInt(emiFrequency) : 1,
       loanType:         loanType         || 'Daily',
       collectionPoint:  collectionPoint  || '',
       isDefault:        isDefault        || false,
@@ -211,7 +219,7 @@ const getLoan = async (req, res) => {
 // @PUT /api/loans/:id
 const updateLoan = async (req, res) => {
   try {
-    const { interestRate, totalInterest, duration, status, collectionPoint, isDefault, notes, loanType, startDate } = req.body;
+    const { interestRate, totalInterest, duration, emiFrequency, status, collectionPoint, isDefault, notes, loanType, startDate } = req.body;
 
     const loan = await Loan.findById(req.params.id);
     if (!loan) return res.status(404).json({ success: false, message: 'Loan not found' });
@@ -220,6 +228,7 @@ const updateLoan = async (req, res) => {
     if (interestRate !== undefined) loan.interestRate = interestRate;
     if (totalInterest !== undefined) loan.totalInterest = totalInterest;
     if (duration !== undefined) loan.duration = duration;
+    if (emiFrequency !== undefined) loan.emiFrequency = parseInt(emiFrequency);
     if (status !== undefined) loan.status = status;
     if (collectionPoint !== undefined) loan.collectionPoint = collectionPoint;
     if (isDefault !== undefined) loan.isDefault = isDefault;
